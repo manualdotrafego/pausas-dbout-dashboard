@@ -25,12 +25,17 @@ CREATE TABLE IF NOT EXISTS events (
     raw_content TEXT,
     channel_id TEXT,
     channel_name TEXT,
+    cpl_snapshot_json TEXT,          -- snapshot do CPL 15d no momento do evento
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_unit_key ON events(unit_key);
 CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(event_type, timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
 """
+
+MIGRATIONS = [
+    "ALTER TABLE events ADD COLUMN cpl_snapshot_json TEXT",
+]
 
 
 @contextmanager
@@ -48,6 +53,12 @@ def get_conn() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with get_conn() as con:
         con.executescript(SCHEMA)
+        # idempotent migrations
+        for stmt in MIGRATIONS:
+            try:
+                con.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
 
 def upsert_event(
@@ -64,22 +75,25 @@ def upsert_event(
     raw_content: str,
     channel_id: str | None,
     channel_name: str | None,
+    cpl_snapshot: dict | None = None,
 ) -> bool:
     """Insert or update event. Returns True if newly inserted."""
+    cpl_json = json.dumps(cpl_snapshot, ensure_ascii=False) if cpl_snapshot else None
     with get_conn() as con:
         cur = con.execute(
             """
             INSERT INTO events
                 (message_id, event_type, timestamp, author, author_id, unit_name, unit_key,
-                 reason, mentions_json, raw_content, channel_id, channel_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 reason, mentions_json, raw_content, channel_id, channel_name, cpl_snapshot_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(message_id) DO UPDATE SET
                 event_type = excluded.event_type,
                 unit_name = excluded.unit_name,
                 unit_key = excluded.unit_key,
                 reason = excluded.reason,
                 mentions_json = excluded.mentions_json,
-                raw_content = excluded.raw_content
+                raw_content = excluded.raw_content,
+                cpl_snapshot_json = COALESCE(excluded.cpl_snapshot_json, events.cpl_snapshot_json)
             """,
             (
                 message_id,
@@ -94,9 +108,18 @@ def upsert_event(
                 raw_content,
                 channel_id,
                 channel_name,
+                cpl_json,
             ),
         )
         return cur.rowcount > 0
+
+
+def _row_to_dict(r) -> dict:
+    d = dict(r)
+    d["mentions"] = json.loads(d.pop("mentions_json") or "[]")
+    cpl_raw = d.pop("cpl_snapshot_json", None) if "cpl_snapshot_json" in d else None
+    d["cpl_snapshot"] = json.loads(cpl_raw) if cpl_raw else None
+    return d
 
 
 def all_events() -> list[dict]:
@@ -104,12 +127,7 @@ def all_events() -> list[dict]:
         rows = con.execute(
             "SELECT * FROM events ORDER BY timestamp DESC"
         ).fetchall()
-    out = []
-    for r in rows:
-        d = dict(r)
-        d["mentions"] = json.loads(d.pop("mentions_json") or "[]")
-        out.append(d)
-    return out
+    return [_row_to_dict(r) for r in rows]
 
 
 def latest_event_timestamp() -> datetime | None:
@@ -138,7 +156,6 @@ def latest_event_per_unit() -> dict[str, dict]:
         ).fetchall()
     out = {}
     for r in rows:
-        d = dict(r)
-        d["mentions"] = json.loads(d.pop("mentions_json") or "[]")
+        d = _row_to_dict(r)
         out[d["unit_key"]] = d
     return out

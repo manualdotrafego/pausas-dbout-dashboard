@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent))
 from parser import parse_message
 from db import init_db, upsert_event, latest_event_timestamp
+from cpl_lookup import cpl_15d
 import dashboard
 
 # load .env from parent (Conexão mtds/) and local
@@ -96,6 +97,13 @@ async def _process_message(message: discord.Message, *, do_git: bool = True) -> 
     unit_name = parsed["unit_name"]
     if not unit_name:
         return False
+    # Captura CPL 15d no momento do evento (apenas para Pausar — para Ativar não faz sentido)
+    cpl_snap = None
+    if parsed["event_type"] == "pausar":
+        try:
+            cpl_snap = cpl_15d(unit_name, parsed["mentions"])
+        except Exception as exc:
+            log.warning("cpl_lookup falhou para %s: %s", unit_name, exc)
     new = upsert_event(
         message_id=str(message.id),
         event_type=parsed["event_type"],
@@ -109,6 +117,7 @@ async def _process_message(message: discord.Message, *, do_git: bool = True) -> 
         raw_content=message.content,
         channel_id=str(message.channel.id),
         channel_name=getattr(message.channel, "name", None),
+        cpl_snapshot=cpl_snap,
     )
     log.info(
         "%s [%s] %s — %s — %s",

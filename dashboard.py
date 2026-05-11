@@ -7,6 +7,7 @@ from pathlib import Path
 from html import escape
 
 from db import all_events, latest_event_per_unit
+from cpl_lookup import classify, gestor_key_for, cpl_15d
 
 OUT_HTML = Path(__file__).parent / "docs" / "index.html"
 
@@ -68,19 +69,24 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 
   <div class="grid">
     <div class="card">
-      <h2>Pausas por gestor (mentions, últimos 30 dias)</h2>
+      <h2>Pausas por GESTOR (últimos 30 dias)</h2>
       <canvas id="chartGestores" height="220"></canvas>
     </div>
     <div class="card">
-      <h2>Pausas por dia (últimos 30 dias)</h2>
-      <canvas id="chartTimeline" height="220"></canvas>
+      <h2>Pausas por CONSULTOR (últimos 30 dias)</h2>
+      <canvas id="chartConsultores" height="220"></canvas>
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:24px">
+    <h2>Pausas vs Ativações por dia (últimos 30 dias)</h2>
+    <canvas id="chartTimeline" height="160"></canvas>
+  </div>
+
   <div class="card">
-    <h2>Unidades — status atual</h2>
+    <h2>Unidades — status atual (com CPL 15d da campanha do gestor)</h2>
     <div class="filters">
-      <input id="f-search" placeholder="Buscar unidade, motivo ou gestor…">
+      <input id="f-search" placeholder="Buscar unidade, motivo, gestor ou consultor…">
       <select id="f-status">
         <option value="">Todos os status</option>
         <option value="PAUSADA">Pausadas</option>
@@ -89,7 +95,12 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
     </div>
     <div class="table-wrap">
       <table id="tbl">
-        <thead><tr><th>Data</th><th>Unidade</th><th>Status</th><th>Tipo</th><th>Motivo</th><th>@s</th><th>Autor</th></tr></thead>
+        <thead><tr>
+          <th>Data</th><th>Unidade</th><th>Status</th>
+          <th>Motivo</th><th>Gestor</th><th>Consultor</th>
+          <th>CPL 15d</th><th>Spend 15d</th><th>Msgs 15d</th>
+          <th>Campanha (Meta)</th>
+        </tr></thead>
         <tbody>{{rows_html}}</tbody>
       </table>
     </div>
@@ -100,11 +111,12 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 
 <script>
 const gestoresData = {{gestores_json}};
+const consultoresData = {{consultores_json}};
 const timelineData = {{timeline_json}};
-const ctx1 = document.getElementById('chartGestores').getContext('2d');
-new Chart(ctx1,{type:'bar',data:{labels:gestoresData.labels,datasets:[{label:'Pausas',data:gestoresData.values,backgroundColor:'#f85149aa',borderColor:'#f85149',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}}});
-const ctx2 = document.getElementById('chartTimeline').getContext('2d');
-new Chart(ctx2,{type:'line',data:{labels:timelineData.labels,datasets:[{label:'Pausas',data:timelineData.pausas,borderColor:'#f85149',backgroundColor:'#f8514922',tension:.3,fill:true},{label:'Ativações',data:timelineData.ativas,borderColor:'#3fb950',backgroundColor:'#3fb95022',tension:.3,fill:true}]},options:{responsive:true,plugins:{legend:{labels:{color:'#e6edf3'}}},scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}}});
+const barOpts = {responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}};
+new Chart(document.getElementById('chartGestores').getContext('2d'),{type:'bar',data:{labels:gestoresData.labels,datasets:[{label:'Pausas',data:gestoresData.values,backgroundColor:'#58a6ffaa',borderColor:'#58a6ff',borderWidth:1}]},options:barOpts});
+new Chart(document.getElementById('chartConsultores').getContext('2d'),{type:'bar',data:{labels:consultoresData.labels,datasets:[{label:'Pausas',data:consultoresData.values,backgroundColor:'#d29922aa',borderColor:'#d29922',borderWidth:1}]},options:barOpts});
+new Chart(document.getElementById('chartTimeline').getContext('2d'),{type:'line',data:{labels:timelineData.labels,datasets:[{label:'Pausas',data:timelineData.pausas,borderColor:'#f85149',backgroundColor:'#f8514922',tension:.3,fill:true},{label:'Ativações',data:timelineData.ativas,borderColor:'#3fb950',backgroundColor:'#3fb95022',tension:.3,fill:true}]},options:{responsive:true,plugins:{legend:{labels:{color:'#e6edf3'}}},scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}}});
 
 // table filter
 const tbl = document.getElementById('tbl');
@@ -136,23 +148,56 @@ def _fmt_ts(ts: str) -> str:
         return ts
 
 
+def _split_mentions(mentions: list[str]) -> tuple[list[str], list[str]]:
+    """Retorna (gestores_mentions, consultores_mentions)."""
+    gs, cs = [], []
+    for m in mentions:
+        c = classify(m)
+        if c == "gestor":
+            gs.append(m)
+        elif c == "consultor":
+            cs.append(m)
+    return gs, cs
+
+
+def _fmt_money(v) -> str:
+    if v is None:
+        return "—"
+    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _rows_html(units: dict[str, dict]) -> str:
     out = []
-    # Sort by latest timestamp desc
     sorted_units = sorted(units.values(), key=lambda d: d["timestamp"], reverse=True)
     for u in sorted_units:
         status = "ATIVA" if u["event_type"] == "ativar" else "PAUSADA"
         badge_class = "ativa" if status == "ATIVA" else "pausada"
-        mentions = ", ".join(escape(m) for m in u["mentions"])
+        gestores, consultores = _split_mentions(u["mentions"])
+        gestor_html = ", ".join(escape(m) for m in gestores) or "—"
+        consultor_html = ", ".join(escape(m) for m in consultores) or "—"
+
+        # CPL: prioriza snapshot persistido (capturado no momento do evento), senão tenta lookup live
+        cpl_cell = spend_cell = msgs_cell = camp_cell = "—"
+        if status == "PAUSADA":
+            info = u.get("cpl_snapshot") or cpl_15d(u["unit_name"], u["mentions"])
+            if info:
+                cpl_cell = _fmt_money(info.get("cpl")) if info.get("cpl") is not None else "—"
+                spend_cell = _fmt_money(info.get("spend"))
+                msgs_cell = str(info.get("msgs") or 0)
+                camp_cell = f'{escape(info.get("account_name") or "")} → {escape(info.get("campaign_name") or "")}'
+
         out.append(
             f'<tr data-status="{status}">'
             f'<td>{_fmt_ts(u["timestamp"])}</td>'
             f'<td>{escape(u["unit_name"])}</td>'
             f'<td><span class="badge {badge_class}">{status}</span></td>'
-            f'<td>{escape(u["event_type"])}</td>'
             f'<td class="reason">{escape(u["reason"] or "")}</td>'
-            f'<td class="mentions">{mentions}</td>'
-            f'<td>{escape(u["author"])}</td>'
+            f'<td class="mentions">{gestor_html}</td>'
+            f'<td class="mentions" style="color:#d29922">{consultor_html}</td>'
+            f'<td>{cpl_cell}</td>'
+            f'<td>{spend_cell}</td>'
+            f'<td>{msgs_cell}</td>'
+            f'<td class="reason" style="font-size:11px">{camp_cell}</td>'
             f"</tr>"
         )
     return "\n".join(out)
@@ -178,11 +223,12 @@ def _kpis(events: list[dict], units: dict[str, dict]) -> dict:
     return {"pausadas": pausadas, "ativas": ativas, "p30": p30, "a30": a30}
 
 
-def _gestores_chart(events: list[dict]) -> dict:
-    """Counts mentions in Pausar events from last 30 days."""
+def _role_charts(events: list[dict]) -> tuple[dict, dict]:
+    """Conta mentions em Pausar dos últimos 30 dias, separando gestor vs consultor."""
     now = datetime.now(timezone.utc).timestamp()
     cutoff = now - 30 * 86400
-    counter: Counter = Counter()
+    g: Counter = Counter()
+    c: Counter = Counter()
     for e in events:
         if e["event_type"] != "pausar":
             continue
@@ -193,10 +239,15 @@ def _gestores_chart(events: list[dict]) -> dict:
         if ts < cutoff:
             continue
         for m in e["mentions"]:
-            counter[m] += 1
-    # top 12
-    top = counter.most_common(12)
-    return {"labels": [k for k, _ in top], "values": [v for _, v in top]}
+            role = classify(m)
+            if role == "gestor":
+                g[m] += 1
+            elif role == "consultor":
+                c[m] += 1
+    return (
+        {"labels": [k for k, _ in g.most_common(12)], "values": [v for _, v in g.most_common(12)]},
+        {"labels": [k for k, _ in c.most_common(12)], "values": [v for _, v in c.most_common(12)]},
+    )
 
 
 def _timeline_chart(events: list[dict]) -> dict:
@@ -228,7 +279,7 @@ def generate() -> Path:
     units = latest_event_per_unit()
     kpis = _kpis(events, units)
     rows = _rows_html(units)
-    gestores = _gestores_chart(events)
+    gestores, consultores = _role_charts(events)
     timeline = _timeline_chart(events)
     updated = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
@@ -241,6 +292,7 @@ def generate() -> Path:
             .replace("{{kpi_ativacoes_30d}}", str(kpis["a30"]))
             .replace("{{rows_html}}", rows)
             .replace("{{gestores_json}}", json.dumps(gestores))
+            .replace("{{consultores_json}}", json.dumps(consultores))
             .replace("{{timeline_json}}", json.dumps(timeline)))
 
     OUT_HTML.parent.mkdir(parents=True, exist_ok=True)
