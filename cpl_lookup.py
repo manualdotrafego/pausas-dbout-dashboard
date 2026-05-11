@@ -158,10 +158,7 @@ def cpl_15d(unit_name: str, mentions: list[str], reference_date: datetime | None
     cache = _load()
     if not cache.get("enabled"):
         return None
-    gestor = gestor_key_for(mentions)
-    if not gestor or gestor not in cache["gestor_to_acc_ids"]:
-        return None
-    acc_ids = cache["gestor_to_acc_ids"][gestor]
+    preferred = gestor_key_for(mentions)
     unit_key = _norm(unit_name)
     if not unit_key:
         return None
@@ -169,21 +166,26 @@ def cpl_15d(unit_name: str, mentions: list[str], reference_date: datetime | None
     now = reference_date or datetime.now()
     cutoff = (now - timedelta(days=15)).date().isoformat()
 
-    # 1) Encontra a melhor campanha (top score) dentro das contas desse gestor
-    best = None  # (score, acc, camp)
-    for acc_id in acc_ids:
-        acc = cache["accounts"].get(acc_id)
-        if not acc:
-            continue
-        for camp in acc.get("campaigns", []):
-            score = _match_score(unit_key, _norm(camp.get("name", "")))
-            if score == 0:
+    # 1) Busca global: percorre TODAS as contas de TODOS os gestores
+    #    Score com bonus se a campanha pertencer ao gestor @mencionado.
+    best = None  # (score, gestor, acc, camp)
+    for g_name, acc_ids in cache["gestor_to_acc_ids"].items():
+        for acc_id in acc_ids:
+            acc = cache["accounts"].get(acc_id)
+            if not acc:
                 continue
-            if best is None or score > best[0]:
-                best = (score, acc, camp)
+            for camp in acc.get("campaigns", []):
+                base = _match_score(unit_key, _norm(camp.get("name", "")))
+                if base == 0:
+                    continue
+                score = base + (0.5 if preferred and g_name == preferred else 0)
+                if best is None or score > best[0]:
+                    best = (score, g_name, acc, camp)
     if best is None:
         return None
-    _, matched_acc_obj, matched_camp_obj = best
+    _, matched_gestor, matched_acc_obj, matched_camp_obj = best
+    # override gestor com o real (pode diferir do @mencionado)
+    gestor = matched_gestor
 
     # 2) Soma spend + msgs dos ads dela nos últimos 15 dias
     spend_total = 0.0
