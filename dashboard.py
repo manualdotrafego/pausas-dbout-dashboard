@@ -37,9 +37,16 @@ h1{margin:0 0 4px;font-size:24px}
 @media (max-width:900px){.grid{grid-template-columns:1fr}}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
 .card h2{margin:0 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-.filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
 .filters input,.filters select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px}
 .filters input{flex:1;min-width:180px}
+.chips{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.chip{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:16px;padding:5px 12px;font-size:12px;cursor:pointer;transition:all .15s;font-family:inherit}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip.consultor.active{background:var(--warn);border-color:var(--warn)}
+.chip .n{opacity:.75;margin-left:4px;font-size:11px}
+.chip-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-right:6px;align-self:center}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
 th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;letter-spacing:.5px;position:sticky;top:0;background:var(--card)}
@@ -92,6 +99,21 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
         <option value="PAUSADA">Pausadas</option>
         <option value="ATIVA">Ativas/Reativadas</option>
       </select>
+      <select id="f-date">
+        <option value="0">Todo o período</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="15">Últimos 15 dias</option>
+        <option value="30">Últimos 30 dias</option>
+        <option value="60">Últimos 60 dias</option>
+      </select>
+    </div>
+    <div class="chips" id="gestor-chips">
+      <span class="chip-label">Gestor:</span>
+      {{gestor_chips_html}}
+    </div>
+    <div class="chips" id="consultor-chips">
+      <span class="chip-label">Consultor:</span>
+      {{consultor_chips_html}}
     </div>
     <div class="table-wrap">
       <table id="tbl">
@@ -122,18 +144,50 @@ new Chart(document.getElementById('chartTimeline').getContext('2d'),{type:'line'
 const tbl = document.getElementById('tbl');
 const fSearch = document.getElementById('f-search');
 const fStatus = document.getElementById('f-status');
+const fDate = document.getElementById('f-date');
+let activeGestor = '';
+let activeConsultor = '';
 function applyFilters(){
   const q = fSearch.value.toLowerCase();
   const st = fStatus.value;
+  const days = parseInt(fDate.value);
   for (const tr of tbl.tBodies[0].rows){
     const text = tr.textContent.toLowerCase();
     const trStatus = tr.dataset.status || '';
-    const ok = (!q || text.includes(q)) && (!st || trStatus === st);
+    const trGestores = (tr.dataset.gestores || '').toLowerCase();
+    const trConsultores = (tr.dataset.consultores || '').toLowerCase();
+    const trDays = parseInt(tr.dataset.daysago || '9999');
+    let ok = (!q || text.includes(q));
+    ok = ok && (!st || trStatus === st);
+    ok = ok && (!activeGestor || trGestores.includes(activeGestor.toLowerCase()));
+    ok = ok && (!activeConsultor || trConsultores.includes(activeConsultor.toLowerCase()));
+    ok = ok && (days === 0 || trDays <= days);
     tr.style.display = ok ? '' : 'none';
   }
 }
 fSearch.addEventListener('input', applyFilters);
 fStatus.addEventListener('change', applyFilters);
+fDate.addEventListener('change', applyFilters);
+
+// chip handlers
+function setupChips(containerId, varSetter){
+  const cont = document.getElementById(containerId);
+  for (const chip of cont.querySelectorAll('.chip')){
+    chip.addEventListener('click', () => {
+      const wasActive = chip.classList.contains('active');
+      cont.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      if (!wasActive){
+        chip.classList.add('active');
+        varSetter(chip.dataset.name || '');
+      } else {
+        varSetter('');
+      }
+      applyFilters();
+    });
+  }
+}
+setupChips('gestor-chips', v => { activeGestor = v; });
+setupChips('consultor-chips', v => { activeConsultor = v; });
 </script>
 </body>
 </html>
@@ -168,6 +222,7 @@ def _fmt_money(v) -> str:
 
 def _rows_html(units: dict[str, dict]) -> str:
     out = []
+    now = datetime.now(timezone.utc)
     sorted_units = sorted(units.values(), key=lambda d: d["timestamp"], reverse=True)
     for u in sorted_units:
         status = "ATIVA" if u["event_type"] == "ativar" else "PAUSADA"
@@ -175,6 +230,16 @@ def _rows_html(units: dict[str, dict]) -> str:
         gestores, consultores = _split_mentions(u["mentions"])
         gestor_html = ", ".join(escape(m) for m in gestores) or "—"
         consultor_html = ", ".join(escape(m) for m in consultores) or "—"
+        # data attrs
+        gestores_attr = "|".join(gestores)
+        consultores_attr = "|".join(consultores)
+        try:
+            evt_dt = datetime.fromisoformat(u["timestamp"])
+            if evt_dt.tzinfo is None:
+                evt_dt = evt_dt.replace(tzinfo=timezone.utc)
+            days_ago = max(0, (now - evt_dt).days)
+        except Exception:
+            days_ago = 9999
 
         # CPL: prioriza snapshot persistido (capturado no momento do evento), senão tenta lookup live
         cpl_cell = spend_cell = msgs_cell = camp_cell = "—"
@@ -187,7 +252,10 @@ def _rows_html(units: dict[str, dict]) -> str:
                 camp_cell = f'{escape(info.get("account_name") or "")} → {escape(info.get("campaign_name") or "")}'
 
         out.append(
-            f'<tr data-status="{status}">'
+            f'<tr data-status="{status}" '
+            f'data-gestores="{escape(gestores_attr, quote=True)}" '
+            f'data-consultores="{escape(consultores_attr, quote=True)}" '
+            f'data-daysago="{days_ago}">'
             f'<td>{_fmt_ts(u["timestamp"])}</td>'
             f'<td>{escape(u["unit_name"])}</td>'
             f'<td><span class="badge {badge_class}">{status}</span></td>'
@@ -221,6 +289,32 @@ def _kpis(events: list[dict], units: dict[str, dict]) -> dict:
         else:
             a30 += 1
     return {"pausadas": pausadas, "ativas": ativas, "p30": p30, "a30": a30}
+
+
+def _role_chips(events: list[dict]) -> tuple[str, str]:
+    """Conta pausas por gestor/consultor (todo o histórico) e gera os chips HTML clicáveis."""
+    g: Counter = Counter()
+    c: Counter = Counter()
+    for e in events:
+        if e["event_type"] != "pausar":
+            continue
+        for m in e["mentions"]:
+            role = classify(m)
+            if role == "gestor":
+                g[m] += 1
+            elif role == "consultor":
+                c[m] += 1
+
+    def chips(counter: Counter, css_extra: str = "") -> str:
+        if not counter:
+            return '<span class="chip-label" style="opacity:.5">nenhum</span>'
+        return " ".join(
+            f'<button class="chip {css_extra}" data-name="{escape(name, quote=True)}">'
+            f'{escape(name)}<span class="n">({n})</span></button>'
+            for name, n in counter.most_common()
+        )
+
+    return chips(g), chips(c, "consultor")
 
 
 def _role_charts(events: list[dict]) -> tuple[dict, dict]:
@@ -280,6 +374,7 @@ def generate() -> Path:
     kpis = _kpis(events, units)
     rows = _rows_html(units)
     gestores, consultores = _role_charts(events)
+    gestor_chips, consultor_chips = _role_chips(events)
     timeline = _timeline_chart(events)
     updated = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
@@ -291,6 +386,8 @@ def generate() -> Path:
             .replace("{{kpi_pausas_30d}}", str(kpis["p30"]))
             .replace("{{kpi_ativacoes_30d}}", str(kpis["a30"]))
             .replace("{{rows_html}}", rows)
+            .replace("{{gestor_chips_html}}", gestor_chips)
+            .replace("{{consultor_chips_html}}", consultor_chips)
             .replace("{{gestores_json}}", json.dumps(gestores))
             .replace("{{consultores_json}}", json.dumps(consultores))
             .replace("{{timeline_json}}", json.dumps(timeline)))
