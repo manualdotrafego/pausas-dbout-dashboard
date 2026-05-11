@@ -99,13 +99,14 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
         <option value="PAUSADA">Pausadas</option>
         <option value="ATIVA">Ativas/Reativadas</option>
       </select>
-      <select id="f-date">
-        <option value="0">Todo o período</option>
-        <option value="7">Últimos 7 dias</option>
-        <option value="15">Últimos 15 dias</option>
-        <option value="30">Últimos 30 dias</option>
-        <option value="60">Últimos 60 dias</option>
-      </select>
+    </div>
+    <div class="chips" id="date-chips">
+      <span class="chip-label">Período:</span>
+      <button class="chip date-chip active" data-days="0">Tudo<span class="n">({{count_total}})</span></button>
+      <button class="chip date-chip" data-days="7">Últimos 7 dias<span class="n">({{count_7d}})</span></button>
+      <button class="chip date-chip" data-days="15">Últimos 15 dias<span class="n">({{count_15d}})</span></button>
+      <button class="chip date-chip" data-days="30">Últimos 30 dias<span class="n">({{count_30d}})</span></button>
+      <button class="chip date-chip" data-days="60">Últimos 60 dias<span class="n">({{count_60d}})</span></button>
     </div>
     <div class="chips" id="gestor-chips">
       <span class="chip-label">Gestor:</span>
@@ -144,13 +145,12 @@ new Chart(document.getElementById('chartTimeline').getContext('2d'),{type:'line'
 const tbl = document.getElementById('tbl');
 const fSearch = document.getElementById('f-search');
 const fStatus = document.getElementById('f-status');
-const fDate = document.getElementById('f-date');
 let activeGestor = '';
 let activeConsultor = '';
+let activeDays = 0;
 function applyFilters(){
   const q = fSearch.value.toLowerCase();
   const st = fStatus.value;
-  const days = parseInt(fDate.value);
   for (const tr of tbl.tBodies[0].rows){
     const text = tr.textContent.toLowerCase();
     const trStatus = tr.dataset.status || '';
@@ -161,16 +161,15 @@ function applyFilters(){
     ok = ok && (!st || trStatus === st);
     ok = ok && (!activeGestor || trGestores.includes(activeGestor.toLowerCase()));
     ok = ok && (!activeConsultor || trConsultores.includes(activeConsultor.toLowerCase()));
-    ok = ok && (days === 0 || trDays <= days);
+    ok = ok && (activeDays === 0 || trDays <= activeDays);
     tr.style.display = ok ? '' : 'none';
   }
 }
 fSearch.addEventListener('input', applyFilters);
 fStatus.addEventListener('change', applyFilters);
-fDate.addEventListener('change', applyFilters);
 
-// chip handlers
-function setupChips(containerId, varSetter){
+// chip handlers (toggle-style: clicking active chip deselects)
+function setupChips(containerId, varSetter, defaultActive){
   const cont = document.getElementById(containerId);
   for (const chip of cont.querySelectorAll('.chip')){
     chip.addEventListener('click', () => {
@@ -178,9 +177,12 @@ function setupChips(containerId, varSetter){
       cont.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
       if (!wasActive){
         chip.classList.add('active');
-        varSetter(chip.dataset.name || '');
+        varSetter(chip.dataset.name !== undefined ? chip.dataset.name : (parseInt(chip.dataset.days) || 0));
+      } else if (defaultActive){
+        defaultActive.classList.add('active');
+        varSetter(defaultActive.dataset.name !== undefined ? defaultActive.dataset.name : (parseInt(defaultActive.dataset.days) || 0));
       } else {
-        varSetter('');
+        varSetter(chip.dataset.name !== undefined ? '' : 0);
       }
       applyFilters();
     });
@@ -188,6 +190,8 @@ function setupChips(containerId, varSetter){
 }
 setupChips('gestor-chips', v => { activeGestor = v; });
 setupChips('consultor-chips', v => { activeConsultor = v; });
+const dateAllChip = document.querySelector('#date-chips .chip[data-days="0"]');
+setupChips('date-chips', v => { activeDays = v; }, dateAllChip);
 </script>
 </body>
 </html>
@@ -291,6 +295,26 @@ def _kpis(events: list[dict], units: dict[str, dict]) -> dict:
     return {"pausadas": pausadas, "ativas": ativas, "p30": p30, "a30": a30}
 
 
+def _date_counts(units: dict[str, dict]) -> dict[str, int]:
+    """Conta unidades cujo último evento aconteceu nos últimos N dias.
+    Retorna chaves: total, 7d, 15d, 30d, 60d."""
+    now = datetime.now(timezone.utc)
+    out = {"total": len(units), "7d": 0, "15d": 0, "30d": 0, "60d": 0}
+    for u in units.values():
+        try:
+            dt = datetime.fromisoformat(u["timestamp"])
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            days = (now - dt).days
+        except Exception:
+            continue
+        if days <= 7: out["7d"] += 1
+        if days <= 15: out["15d"] += 1
+        if days <= 30: out["30d"] += 1
+        if days <= 60: out["60d"] += 1
+    return out
+
+
 def _role_chips(events: list[dict]) -> tuple[str, str]:
     """Conta pausas por gestor/consultor (todo o histórico) e gera os chips HTML clicáveis."""
     g: Counter = Counter()
@@ -376,6 +400,7 @@ def generate() -> Path:
     gestores, consultores = _role_charts(events)
     gestor_chips, consultor_chips = _role_chips(events)
     timeline = _timeline_chart(events)
+    dc = _date_counts(units)
     updated = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
     html = (PAGE_TEMPLATE
@@ -388,6 +413,11 @@ def generate() -> Path:
             .replace("{{rows_html}}", rows)
             .replace("{{gestor_chips_html}}", gestor_chips)
             .replace("{{consultor_chips_html}}", consultor_chips)
+            .replace("{{count_total}}", str(dc["total"]))
+            .replace("{{count_7d}}", str(dc["7d"]))
+            .replace("{{count_15d}}", str(dc["15d"]))
+            .replace("{{count_30d}}", str(dc["30d"]))
+            .replace("{{count_60d}}", str(dc["60d"]))
             .replace("{{gestores_json}}", json.dumps(gestores))
             .replace("{{consultores_json}}", json.dumps(consultores))
             .replace("{{timeline_json}}", json.dumps(timeline)))
