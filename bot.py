@@ -69,6 +69,11 @@ def _git_commit_push(repo_dir: Path, html_path: Path) -> None:
             ["git", "-C", str(repo_dir), "commit", "-m", msg],
             check=True,
         )
+        # rebase contra remoto pra evitar race quando alguém comita manualmente
+        subprocess.run(
+            ["git", "-C", str(repo_dir), "pull", "--rebase", "--autostash"],
+            check=False,
+        )
         subprocess.run(["git", "-C", str(repo_dir), "push"], check=True)
         log.info("dashboard publicado no GitHub Pages")
     except subprocess.CalledProcessError as e:
