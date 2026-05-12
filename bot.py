@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 # local modules
 sys.path.insert(0, str(Path(__file__).parent))
 from parser import parse_message
-from db import init_db, upsert_event, latest_event_timestamp
+from db import init_db, upsert_event, latest_event_timestamp, first_activation_before, update_ltv
 from cpl_lookup import cpl_15d
 import dashboard
 
@@ -80,6 +80,39 @@ def _git_commit_push(repo_dir: Path, html_path: Path) -> None:
         log.error("git falhou: %s", e)
 
 
+async def _find_activation_in_discord(
+    channel: discord.TextChannel,
+    unit_key: str,
+    before: datetime,
+    *,
+    deep_until: datetime | None = None,
+) -> datetime | None:
+    """Varre o histórico do canal procurando a primeira ativação de uma unidade
+    (qualquer ativar OU FRANQUIA E CIDADE com mesmo unit_key) ANTES de `before`.
+    Para no `deep_until` (default: 1 ano antes de `before`)."""
+    from parser import parse_message, normalize_unit_key  # local import
+    if deep_until is None:
+        from datetime import timedelta as _td
+        deep_until = before - _td(days=365)
+    earliest_ts: datetime | None = None
+    try:
+        async for msg in channel.history(limit=None, before=before, after=deep_until, oldest_first=True):
+            if not msg.content:
+                continue
+            parsed = parse_message(msg.content)
+            if not parsed or parsed["event_type"] != "ativar":
+                continue
+            if parsed["unit_key"] != unit_key:
+                continue
+            ts = msg.created_at.astimezone(timezone.utc)
+            if earliest_ts is None or ts < earliest_ts:
+                earliest_ts = ts
+                break  # oldest_first=True, then this is the first
+    except Exception as exc:
+        log.warning("erro no scan de ativação: %s", exc)
+    return earliest_ts
+
+
 def _build_mention_map(message: discord.Message) -> dict[int, str]:
     """Map of mentioned-user-id -> display name."""
     m: dict[int, str] = {}
@@ -132,6 +165,21 @@ async def _process_message(message: discord.Message, *, do_git: bool = True) -> 
         parsed["reason"][:60],
         ", ".join(parsed["mentions"]),
     )
+
+    # Para pausas: calcula LTV (tempo de permanência)
+    if parsed["event_type"] == "pausar":
+        pause_ts = message.created_at.astimezone(timezone.utc)
+        activated_at = first_activation_before(parsed["unit_key"], pause_ts)
+        if activated_at is None:
+            # Fallback: varre histórico do Discord (slow path) — só pra novas pausas em real-time
+            # Para backfill, o script de enrichment faz isso de forma controlada
+            channel = message.channel
+            if hasattr(channel, "history"):
+                activated_at = await _find_activation_in_discord(channel, parsed["unit_key"], pause_ts)
+        if activated_at is not None:
+            days_active = max(0, (pause_ts - activated_at).days)
+            update_ltv(str(message.id), activated_at, days_active)
+            log.info("  LTV: %s → %s = %d dias", activated_at.date(), pause_ts.date(), days_active)
     return True
 
 

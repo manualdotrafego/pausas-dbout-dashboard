@@ -31,6 +31,15 @@ ACTIVATE_HEAD_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Ativação inicial de uma franquia nova: "✅ FRANQUIA E CIDADE: <nome>"
+FRANQUIA_HEAD_RE = re.compile(
+    r"^\s*"
+    r"(?:✅\s*)?"
+    r"FRANQUIA\s+E\s+CIDADE\s*:?\s*"
+    r"(?P<rest>.+)$",
+    re.IGNORECASE,
+)
+
 # strip phrases that come after the unit name on the SAME line
 TRAIL_STRIPS = [
     r",?\s*por\s+gentileza.*$",
@@ -107,15 +116,17 @@ def parse_message(content: str, mention_id_to_name: dict[int, str] | None = None
         if m:
             event_type = "ativar"
             rest_of_head = m.group("rest")
+        else:
+            m = FRANQUIA_HEAD_RE.match(head)
+            if m:
+                event_type = "ativar"  # franquia nova = ativação inicial
+                rest_of_head = m.group("rest")
 
     if not event_type:
         return None
 
     # unit name is text before "," / "por gentileza" / EOL
-    # If head has trailing data on same line, split at the first comma; otherwise whole rest
-    # Try to find unit boundary
     unit_raw = rest_of_head
-    # cut at common separators
     cut = re.split(r",|\bpor\s+gentileza\b", unit_raw, maxsplit=1, flags=re.IGNORECASE)[0]
     unit_name = _clean_unit(cut)
 
@@ -161,7 +172,8 @@ if __name__ == "__main__":
         "🚨 pausar Araguaina por gentileza  assim que encerrar o saldo👇\n\nPassando aqui pra avisar...\n<@333> <@444>",
         "✅ Ativar Ipatinga\nInvestimento: 1200,00 (1365,96 - imposto)\nVenc: 24\n<@555> <@666>",
         "Pausar +Odonto Taguatinga, por gentileza\nPagamento em atraso\n<@111> <@222>",
-        "🚨 Pausar OralDents Ecoporanga, por gentileza\nPagamento em atraso\n🚨 Pausar OralDents Extrema, por gentileza\nPagamento em atraso\n<@111> <@222>",
+        "✅ FRANQUIA E CIDADE: Cametá Sorrisos - Cametá/PA\nE-MAIL:\nTELEFONE GESTÃO: 91 8160-2783\nNOME DECISOR: Claudio\n<@111> <@222>",
+        "✅ FRANQUIA E CIDADE:  Odonto Company Santo Amaro\nNOME DECISOR: Hercules\n<@333>",
     ]
     for s in samples:
         print("---")

@@ -59,6 +59,13 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 .table-wrap{max-height:520px;overflow:auto}
 .foot{color:var(--muted);font-size:11px;text-align:center;margin-top:24px}
 .update-banner{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--muted);margin-bottom:16px;display:inline-block}
+.tabs{display:flex;gap:2px;margin:8px 0 16px;border-bottom:1px solid var(--border)}
+.tab{background:transparent;color:var(--muted);border:none;border-bottom:2px solid transparent;padding:10px 18px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+.ltv-bar{display:inline-block;background:linear-gradient(90deg,#3fb950 0%, #d29922 50%, #f85149 100%);height:6px;border-radius:3px;vertical-align:middle;margin-right:8px}
 </style>
 </head>
 <body>
@@ -73,6 +80,13 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
     <div class="kpi warn"><div class="v">{{kpi_pausas_30d}}</div><div class="l">Pausas nos últimos 30 dias</div></div>
     <div class="kpi"><div class="v">{{kpi_ativacoes_30d}}</div><div class="l">Ativações nos últimos 30 dias</div></div>
   </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="overview">📊 Pausas & Atividade</button>
+    <button class="tab" data-tab="ltv">⏱️ Tempo de Permanência</button>
+  </div>
+
+  <div class="tab-panel active" id="tab-overview">
 
   <div class="grid">
     <div class="card">
@@ -129,7 +143,43 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
     </div>
   </div>
 
-  <div class="foot">Gerado automaticamente pelo Bot Dbout · <a href="https://github.com" style="color:var(--accent)">repo</a></div>
+  </div><!-- /tab-overview -->
+
+  <div class="tab-panel" id="tab-ltv">
+    <div class="kpis">
+      <div class="kpi"><div class="v">{{ltv_count}}</div><div class="l">Pausas com tempo de permanência calculado</div></div>
+      <div class="kpi success"><div class="v">{{ltv_avg}}</div><div class="l">Média de dias ativos antes de pausar</div></div>
+      <div class="kpi warn"><div class="v">{{ltv_median}}</div><div class="l">Mediana (dias)</div></div>
+      <div class="kpi danger"><div class="v">{{ltv_max}}</div><div class="l">Máximo (dias)</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:24px">
+      <h2>Distribuição do tempo de permanência (dias antes da pausa)</h2>
+      <canvas id="chartLtvHist" height="180"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Tempo de Permanência por unidade pausada (LTV em dias)</h2>
+      <div class="filters">
+        <input id="f-ltv-search" placeholder="Buscar unidade ou gestor…">
+      </div>
+      <div class="table-wrap">
+        <table id="tbl-ltv">
+          <thead><tr>
+            <th>Unidade</th><th>Ativada em</th><th>Pausada em</th>
+            <th>Tempo Ativo</th><th>Gestor</th><th>Consultor</th>
+          </tr></thead>
+          <tbody>{{ltv_rows_html}}</tbody>
+        </table>
+      </div>
+      <div style="color:var(--muted);font-size:11px;margin-top:8px">
+        Unidades em branco: a ativação aconteceu antes do nosso histórico de Discord ou o nome
+        difere da mensagem original de <code>✅ Ativar</code> / <code>✅ FRANQUIA E CIDADE</code>.
+      </div>
+    </div>
+  </div><!-- /tab-ltv -->
+
+  <div class="foot">Gerado automaticamente pelo Bot Dbout · <a href="https://github.com/manualdotrafego/pausas-dbout-dashboard" style="color:var(--accent)">repo</a></div>
 </div>
 
 <script>
@@ -192,6 +242,36 @@ setupChips('gestor-chips', v => { activeGestor = v; });
 setupChips('consultor-chips', v => { activeConsultor = v; });
 const dateAllChip = document.querySelector('#date-chips .chip[data-days="0"]');
 setupChips('date-chips', v => { activeDays = v; }, dateAllChip);
+
+// Tabs
+for (const tab of document.querySelectorAll('.tab')){
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+}
+
+// LTV histogram chart
+const ltvHistData = {{ltv_hist_json}};
+new Chart(document.getElementById('chartLtvHist').getContext('2d'), {
+  type: 'bar',
+  data: {labels: ltvHistData.labels, datasets: [{label:'Unidades', data: ltvHistData.values, backgroundColor:'#58a6ffaa', borderColor:'#58a6ff', borderWidth: 1}]},
+  options: {responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}}
+});
+
+// LTV table filter
+const tblLtv = document.getElementById('tbl-ltv');
+const fLtvSearch = document.getElementById('f-ltv-search');
+if (fLtvSearch && tblLtv){
+  fLtvSearch.addEventListener('input', () => {
+    const q = fLtvSearch.value.toLowerCase();
+    for (const tr of tblLtv.tBodies[0].rows){
+      tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
+    }
+  });
+}
 </script>
 </body>
 </html>
@@ -293,6 +373,90 @@ def _kpis(events: list[dict], units: dict[str, dict]) -> dict:
         else:
             a30 += 1
     return {"pausadas": pausadas, "ativas": ativas, "p30": p30, "a30": a30}
+
+
+def _ltv_data(events: list[dict]) -> dict:
+    """Coleta dados LTV: lista de pausas com days_active, distribuição, KPIs."""
+    pausas_com_ltv = []
+    for e in events:
+        if e["event_type"] != "pausar":
+            continue
+        if e.get("days_active") is None:
+            continue
+        pausas_com_ltv.append(e)
+    pausas_sem_ltv = [
+        e for e in events
+        if e["event_type"] == "pausar" and e.get("days_active") is None
+    ]
+
+    days_list = [e["days_active"] for e in pausas_com_ltv]
+    count = len(days_list)
+    avg_d = round(sum(days_list) / count) if count else 0
+    med_d = sorted(days_list)[count // 2] if count else 0
+    max_d = max(days_list) if days_list else 0
+
+    # Histograma: buckets de 30 dias
+    buckets = [(0, 30, "0-30 dias"), (31, 60, "31-60 dias"), (61, 90, "61-90 dias"),
+               (91, 180, "91-180 dias"), (181, 365, "181-365 dias"), (366, 99999, "1 ano+")]
+    hist = []
+    for lo, hi, label in buckets:
+        n = sum(1 for d in days_list if lo <= d <= hi)
+        hist.append((label, n))
+
+    return {
+        "count": count,
+        "avg": avg_d,
+        "median": med_d,
+        "max": max_d,
+        "pausas_com_ltv": pausas_com_ltv,
+        "pausas_sem_ltv": pausas_sem_ltv,
+        "hist": {"labels": [h[0] for h in hist], "values": [h[1] for h in hist]},
+    }
+
+
+def _ltv_rows_html(ltv_data: dict) -> str:
+    rows = []
+    # Primeiro as com LTV (ordenadas por dias desc), depois as sem (em branco)
+    com_ltv = sorted(ltv_data["pausas_com_ltv"], key=lambda e: -(e["days_active"] or 0))
+    for e in com_ltv:
+        d = e["days_active"]
+        meses = d // 30
+        gestores, consultores = _split_mentions(e["mentions"])
+        # Cor da barra: verde se > 90, amarelo 30-90, vermelho < 30
+        if d >= 90: color = "#3fb950"
+        elif d >= 30: color = "#d29922"
+        else: color = "#f85149"
+        bar_width = min(100, int(d / 365 * 100))  # base 1 ano = 100%
+        tempo_html = (
+            f'<span class="ltv-bar" style="width:{bar_width}px;background:{color};"></span>'
+            f'<strong>{d}</strong> dias'
+            + (f' <span style="color:var(--muted)">(~{meses} {"mês" if meses==1 else "meses"})</span>' if meses else '')
+        )
+        rows.append(
+            f'<tr>'
+            f'<td>{escape(e["unit_name"])}</td>'
+            f'<td>{_fmt_ts(e["activated_at"])}</td>'
+            f'<td>{_fmt_ts(e["timestamp"])}</td>'
+            f'<td>{tempo_html}</td>'
+            f'<td class="mentions">{", ".join(escape(m) for m in gestores) or "—"}</td>'
+            f'<td class="mentions" style="color:#d29922">{", ".join(escape(m) for m in consultores) or "—"}</td>'
+            f'</tr>'
+        )
+    # Sem LTV — em branco
+    sem_ltv = sorted(ltv_data["pausas_sem_ltv"], key=lambda e: e["timestamp"], reverse=True)
+    for e in sem_ltv:
+        gestores, consultores = _split_mentions(e["mentions"])
+        rows.append(
+            f'<tr style="opacity:.55">'
+            f'<td>{escape(e["unit_name"])}</td>'
+            f'<td>—</td>'
+            f'<td>{_fmt_ts(e["timestamp"])}</td>'
+            f'<td><span style="color:var(--muted)">não encontrado</span></td>'
+            f'<td class="mentions">{", ".join(escape(m) for m in gestores) or "—"}</td>'
+            f'<td class="mentions" style="color:#d29922">{", ".join(escape(m) for m in consultores) or "—"}</td>'
+            f'</tr>'
+        )
+    return "\n".join(rows)
 
 
 def _date_counts(units: dict[str, dict]) -> dict[str, int]:
@@ -401,11 +565,19 @@ def generate() -> Path:
     gestor_chips, consultor_chips = _role_chips(events)
     timeline = _timeline_chart(events)
     dc = _date_counts(units)
+    ltv = _ltv_data(events)
+    ltv_rows = _ltv_rows_html(ltv)
     updated = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
     html = (PAGE_TEMPLATE
             .replace("{{updated_at}}", updated)
             .replace("{{total_events}}", str(len(events)))
+            .replace("{{ltv_count}}", str(ltv["count"]))
+            .replace("{{ltv_avg}}", str(ltv["avg"]))
+            .replace("{{ltv_median}}", str(ltv["median"]))
+            .replace("{{ltv_max}}", str(ltv["max"]))
+            .replace("{{ltv_rows_html}}", ltv_rows)
+            .replace("{{ltv_hist_json}}", json.dumps(ltv["hist"]))
             .replace("{{kpi_pausadas}}", str(kpis["pausadas"]))
             .replace("{{kpi_ativas}}", str(kpis["ativas"]))
             .replace("{{kpi_pausas_30d}}", str(kpis["p30"]))

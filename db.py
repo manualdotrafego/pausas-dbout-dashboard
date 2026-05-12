@@ -35,6 +35,8 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
 
 MIGRATIONS = [
     "ALTER TABLE events ADD COLUMN cpl_snapshot_json TEXT",
+    "ALTER TABLE events ADD COLUMN activated_at TEXT",
+    "ALTER TABLE events ADD COLUMN days_active INTEGER",
 ]
 
 
@@ -128,6 +130,45 @@ def all_events() -> list[dict]:
             "SELECT * FROM events ORDER BY timestamp DESC"
         ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def first_activation_before(unit_key: str, pause_ts: datetime) -> datetime | None:
+    """Procura o primeiro 'ativar' OU FRANQUIA E CIDADE da unidade ANTES do pause_ts.
+    Retorna o timestamp ou None.
+    Considera o início real da unidade — usa o MAIS ANTIGO se houver vários (uma vez ativada, fica ativa até pausar).
+    Se houver ciclos pausa/ativa, usa o ativar mais recente antes do pause atual (mas após o pause anterior se existir)."""
+    pause_iso = pause_ts.isoformat()
+    with get_conn() as con:
+        # Pega último pause da mesma unidade ANTES deste pause
+        prev_pause = con.execute(
+            """SELECT timestamp FROM events
+               WHERE unit_key=? AND event_type='pausar' AND timestamp < ?
+               ORDER BY timestamp DESC LIMIT 1""",
+            (unit_key, pause_iso),
+        ).fetchone()
+        # Pega ativar entre o último pause anterior (se existir) e o pause atual
+        prev_pause_iso = prev_pause["timestamp"] if prev_pause else "1900-01-01"
+        row = con.execute(
+            """SELECT timestamp FROM events
+               WHERE unit_key=? AND event_type='ativar'
+                     AND timestamp > ? AND timestamp < ?
+               ORDER BY timestamp ASC LIMIT 1""",
+            (unit_key, prev_pause_iso, pause_iso),
+        ).fetchone()
+    if not row or not row["timestamp"]:
+        return None
+    try:
+        return datetime.fromisoformat(row["timestamp"])
+    except Exception:
+        return None
+
+
+def update_ltv(message_id: str, activated_at: datetime, days_active: int) -> None:
+    with get_conn() as con:
+        con.execute(
+            "UPDATE events SET activated_at=?, days_active=? WHERE message_id=?",
+            (activated_at.isoformat(), days_active, message_id),
+        )
 
 
 def latest_event_timestamp() -> datetime | None:
