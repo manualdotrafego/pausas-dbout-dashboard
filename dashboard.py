@@ -59,6 +59,20 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 .table-wrap{max-height:520px;overflow:auto}
 .foot{color:var(--muted);font-size:11px;text-align:center;margin-top:24px}
 .update-banner{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--muted);margin-bottom:16px;display:inline-block}
+.top-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.date-picker{position:relative;display:inline-block}
+.date-picker-btn{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px}
+.date-picker-btn:hover{border-color:var(--accent)}
+.date-picker-btn .lbl{color:var(--accent);font-weight:600}
+.date-picker-pop{position:absolute;right:0;top:calc(100% + 6px);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;min-width:340px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none}
+.date-picker-pop.open{display:block}
+.date-picker-pop .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.date-picker-pop .presets .chip{font-size:12px;padding:4px 10px}
+.date-picker-pop .range-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--muted)}
+.date-picker-pop .range-row input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;font-family:inherit}
+.date-picker-pop .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.date-picker-pop .btn{padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text);font-family:inherit}
+.date-picker-pop .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .tabs{display:flex;gap:2px;margin:8px 0 16px;border-bottom:1px solid var(--border)}
 .tab{background:transparent;color:var(--muted);border:none;border-bottom:2px solid transparent;padding:10px 18px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500;transition:all .15s}
 .tab:hover{color:var(--text)}
@@ -72,7 +86,39 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 <div class="container">
   <h1>📊 Dashboard de Pausas/Ativações</h1>
   <div class="sub">Canal <code>#financeiro</code> · Servidor DBOUT</div>
-  <div class="update-banner">Última atualização: <strong>{{updated_at}}</strong> · Total de eventos: <strong>{{total_events}}</strong></div>
+
+  <div class="top-bar">
+    <div class="update-banner">Última atualização: <strong>{{updated_at}}</strong> · Total de eventos: <strong>{{total_events}}</strong></div>
+
+    <div class="date-picker">
+      <button class="date-picker-btn" id="dp-toggle">
+        📅 Período: <span class="lbl" id="dp-label">Tudo</span> <span style="color:var(--muted)">▾</span>
+      </button>
+      <div class="date-picker-pop" id="dp-pop">
+        <div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.5px;margin-bottom:6px">Atalhos</div>
+        <div class="presets" id="dp-presets">
+          <button class="chip" data-preset="all">Tudo</button>
+          <button class="chip" data-preset="today">Hoje</button>
+          <button class="chip" data-preset="7">Últimos 7 dias</button>
+          <button class="chip" data-preset="15">Últimos 15 dias</button>
+          <button class="chip" data-preset="30">Últimos 30 dias</button>
+          <button class="chip" data-preset="60">Últimos 60 dias</button>
+          {{month_presets_html}}
+        </div>
+        <div style="font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.5px;margin:8px 0 6px">Período customizado</div>
+        <div class="range-row">
+          <label>De:</label>
+          <input type="date" id="dp-start">
+          <label>Até:</label>
+          <input type="date" id="dp-end">
+        </div>
+        <div class="actions">
+          <button class="btn" id="dp-clear">Limpar</button>
+          <button class="btn btn-primary" id="dp-apply">Aplicar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="kpis">
     <div class="kpi danger"><div class="v">{{kpi_pausadas}}</div><div class="l">Atualmente Pausadas</div></div>
@@ -198,6 +244,11 @@ const fStatus = document.getElementById('f-status');
 let activeGestor = '';
 let activeConsultor = '';
 let activeDays = 0;
+function inRangeISO(d){
+  if (typeof globalStartISO !== 'undefined' && globalStartISO && d < globalStartISO) return false;
+  if (typeof globalEndISO !== 'undefined' && globalEndISO && d > globalEndISO) return false;
+  return true;
+}
 function applyFilters(){
   const q = fSearch.value.toLowerCase();
   const st = fStatus.value;
@@ -207,12 +258,26 @@ function applyFilters(){
     const trGestores = (tr.dataset.gestores || '').toLowerCase();
     const trConsultores = (tr.dataset.consultores || '').toLowerCase();
     const trDays = parseInt(tr.dataset.daysago || '9999');
+    const trTs = (tr.dataset.ts || '').slice(0,10);
     let ok = (!q || text.includes(q));
     ok = ok && (!st || trStatus === st);
     ok = ok && (!activeGestor || trGestores.includes(activeGestor.toLowerCase()));
     ok = ok && (!activeConsultor || trConsultores.includes(activeConsultor.toLowerCase()));
     ok = ok && (activeDays === 0 || trDays <= activeDays);
+    ok = ok && inRangeISO(trTs);
     tr.style.display = ok ? '' : 'none';
+  }
+  // LTV table also respects global date range (filtra pela data da pausa)
+  const tblLtvLocal = document.getElementById('tbl-ltv');
+  if (tblLtvLocal && tblLtvLocal.tBodies[0]){
+    const lq = (fLtvSearch && fLtvSearch.value || '').toLowerCase();
+    for (const tr of tblLtvLocal.tBodies[0].rows){
+      const trTs = (tr.dataset.ts || '').slice(0,10);
+      const txt = tr.textContent.toLowerCase();
+      let ok = (!lq || txt.includes(lq));
+      ok = ok && inRangeISO(trTs);
+      tr.style.display = ok ? '' : 'none';
+    }
   }
 }
 fSearch.addEventListener('input', applyFilters);
@@ -242,6 +307,71 @@ setupChips('gestor-chips', v => { activeGestor = v; });
 setupChips('consultor-chips', v => { activeConsultor = v; });
 const dateAllChip = document.querySelector('#date-chips .chip[data-days="0"]');
 setupChips('date-chips', v => { activeDays = v; }, dateAllChip);
+
+// Global date picker
+let globalStartISO = '';  // 'YYYY-MM-DD' inclusive
+let globalEndISO = '';    // 'YYYY-MM-DD' inclusive
+const dpToggle = document.getElementById('dp-toggle');
+const dpPop = document.getElementById('dp-pop');
+const dpLabel = document.getElementById('dp-label');
+const dpStart = document.getElementById('dp-start');
+const dpEnd = document.getElementById('dp-end');
+dpToggle.addEventListener('click', e => { e.stopPropagation(); dpPop.classList.toggle('open'); });
+document.addEventListener('click', e => { if (!dpPop.contains(e.target) && e.target !== dpToggle) dpPop.classList.remove('open'); });
+
+function fmtDateBR(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${d}/${m}/${y.slice(2)}`; }
+
+function updateLabel(){
+  if (!globalStartISO && !globalEndISO){ dpLabel.textContent = 'Tudo'; return; }
+  const s = globalStartISO ? fmtDateBR(globalStartISO) : '…';
+  const e = globalEndISO ? fmtDateBR(globalEndISO) : 'hoje';
+  dpLabel.textContent = `${s} → ${e}`;
+}
+
+function applyGlobalFilter(){
+  updateLabel();
+  if (typeof applyFilters === 'function') applyFilters();
+}
+
+function setPreset(preset){
+  const today = new Date();
+  const toISO = d => d.toISOString().slice(0,10);
+  if (preset === 'all'){ globalStartISO=''; globalEndISO=''; }
+  else if (preset === 'today'){ globalStartISO = globalEndISO = toISO(today); }
+  else if (!isNaN(parseInt(preset))){
+    const days = parseInt(preset);
+    const start = new Date(today); start.setDate(start.getDate() - days);
+    globalStartISO = toISO(start); globalEndISO = toISO(today);
+  } else if (preset.startsWith('m:')){
+    const [_, ym] = preset.split(':');
+    const [y, m] = ym.split('-').map(Number);
+    const start = new Date(y, m-1, 1);
+    const end = new Date(y, m, 0);  // last day
+    globalStartISO = toISO(start); globalEndISO = toISO(end);
+  }
+  if (dpStart) dpStart.value = globalStartISO;
+  if (dpEnd) dpEnd.value = globalEndISO;
+}
+
+document.querySelectorAll('#dp-presets .chip').forEach(b => {
+  b.addEventListener('click', () => {
+    const preset = b.dataset.preset || b.dataset.month;
+    if (b.dataset.month) setPreset('m:' + b.dataset.month);
+    else setPreset(preset);
+    applyGlobalFilter();
+    dpPop.classList.remove('open');
+  });
+});
+document.getElementById('dp-apply').addEventListener('click', () => {
+  globalStartISO = dpStart.value || '';
+  globalEndISO = dpEnd.value || '';
+  applyGlobalFilter();
+  dpPop.classList.remove('open');
+});
+document.getElementById('dp-clear').addEventListener('click', () => {
+  setPreset('all');
+  applyGlobalFilter();
+});
 
 // Tabs
 for (const tab of document.querySelectorAll('.tab')){
@@ -339,7 +469,8 @@ def _rows_html(units: dict[str, dict]) -> str:
             f'<tr data-status="{status}" '
             f'data-gestores="{escape(gestores_attr, quote=True)}" '
             f'data-consultores="{escape(consultores_attr, quote=True)}" '
-            f'data-daysago="{days_ago}">'
+            f'data-daysago="{days_ago}" '
+            f'data-ts="{escape(u["timestamp"], quote=True)}">'
             f'<td>{_fmt_ts(u["timestamp"])}</td>'
             f'<td>{escape(u["unit_name"])}</td>'
             f'<td><span class="badge {badge_class}">{status}</span></td>'
@@ -433,7 +564,7 @@ def _ltv_rows_html(ltv_data: dict) -> str:
             + (f' <span style="color:var(--muted)">(~{meses} {"mês" if meses==1 else "meses"})</span>' if meses else '')
         )
         rows.append(
-            f'<tr>'
+            f'<tr data-ts="{escape(e["timestamp"], quote=True)}">'
             f'<td>{escape(e["unit_name"])}</td>'
             f'<td>{_fmt_ts(e["activated_at"])}</td>'
             f'<td>{_fmt_ts(e["timestamp"])}</td>'
@@ -447,7 +578,7 @@ def _ltv_rows_html(ltv_data: dict) -> str:
     for e in sem_ltv:
         gestores, consultores = _split_mentions(e["mentions"])
         rows.append(
-            f'<tr style="opacity:.55">'
+            f'<tr data-ts="{escape(e["timestamp"], quote=True)}" style="opacity:.55">'
             f'<td>{escape(e["unit_name"])}</td>'
             f'<td>—</td>'
             f'<td>{_fmt_ts(e["timestamp"])}</td>'
@@ -457,6 +588,24 @@ def _ltv_rows_html(ltv_data: dict) -> str:
             f'</tr>'
         )
     return "\n".join(rows)
+
+
+def _month_presets_html(events: list[dict]) -> str:
+    """Gera chips de meses presentes nos eventos (max 6 mais recentes)."""
+    MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+    months = set()
+    for e in events:
+        try:
+            dt = datetime.fromisoformat(e["timestamp"])
+            months.add((dt.year, dt.month))
+        except Exception:
+            continue
+    sorted_months = sorted(months, reverse=True)[:6]
+    parts = []
+    for y, m in sorted_months:
+        label = f"{MESES[m-1]}/{str(y)[2:]}"
+        parts.append(f'<button class="chip" data-month="{y:04d}-{m:02d}">{escape(label)}</button>')
+    return " ".join(parts)
 
 
 def _date_counts(units: dict[str, dict]) -> dict[str, int]:
@@ -567,6 +716,7 @@ def generate() -> Path:
     dc = _date_counts(units)
     ltv = _ltv_data(events)
     ltv_rows = _ltv_rows_html(ltv)
+    month_presets = _month_presets_html(events)
     updated = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
     html = (PAGE_TEMPLATE
@@ -578,6 +728,7 @@ def generate() -> Path:
             .replace("{{ltv_max}}", str(ltv["max"]))
             .replace("{{ltv_rows_html}}", ltv_rows)
             .replace("{{ltv_hist_json}}", json.dumps(ltv["hist"]))
+            .replace("{{month_presets_html}}", month_presets)
             .replace("{{kpi_pausadas}}", str(kpis["pausadas"]))
             .replace("{{kpi_ativas}}", str(kpis["ativas"]))
             .replace("{{kpi_pausas_30d}}", str(kpis["p30"]))

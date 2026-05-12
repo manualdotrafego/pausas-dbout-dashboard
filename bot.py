@@ -209,6 +209,8 @@ def main() -> None:
                         help="puxa histórico desde o dia 01 do mês anterior antes de iniciar listener")
     parser.add_argument("--backfill-only", action="store_true",
                         help="só faz backfill, não inicia listener")
+    parser.add_argument("--backfill-since", type=str, default=None,
+                        help="data inicial customizada para backfill (YYYY-MM-DD)")
     parser.add_argument("--no-git", action="store_true",
                         help="não faz git push após eventos")
     args = parser.parse_args()
@@ -249,7 +251,10 @@ def main() -> None:
             await client.close()
             return
         if should_backfill:
-            since = _first_of_last_month(datetime.now(timezone.utc))
+            if args.backfill_since:
+                since = datetime.fromisoformat(args.backfill_since).replace(tzinfo=timezone.utc)
+            else:
+                since = _first_of_last_month(datetime.now(timezone.utc))
             await backfill(client, target, since, do_git=do_git)
         else:
             # catch-up automático: importa mensagens desde o último evento salvo
