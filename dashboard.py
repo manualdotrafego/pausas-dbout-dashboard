@@ -138,17 +138,17 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 
   <div class="grid">
     <div class="card">
-      <h2>Pausas por GESTOR (últimos 30 dias)</h2>
+      <h2>Pausas por GESTOR <span class="kpi-suffix" style="display:inline">no período</span></h2>
       <canvas id="chartGestores" height="220"></canvas>
     </div>
     <div class="card">
-      <h2>Pausas por CONSULTOR (últimos 30 dias)</h2>
+      <h2>Pausas por CONSULTOR <span class="kpi-suffix" style="display:inline">no período</span></h2>
       <canvas id="chartConsultores" height="220"></canvas>
     </div>
   </div>
 
   <div class="card" style="margin-bottom:24px">
-    <h2>Pausas vs Ativações por dia (últimos 30 dias)</h2>
+    <h2>Pausas vs Ativações por dia <span class="kpi-suffix" style="display:inline">no período</span></h2>
     <canvas id="chartTimeline" height="160"></canvas>
   </div>
 
