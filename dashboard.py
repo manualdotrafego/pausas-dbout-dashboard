@@ -80,6 +80,8 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 .tab-panel{display:none}
 .tab-panel.active{display:block}
 .ltv-bar{display:inline-block;background:linear-gradient(90deg,#3fb950 0%, #d29922 50%, #f85149 100%);height:6px;border-radius:3px;vertical-align:middle;margin-right:8px}
+.kpi-suffix{display:block;color:var(--muted);font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;margin-top:2px}
+.empty-state{padding:24px;text-align:center;color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
@@ -121,10 +123,10 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
   </div>
 
   <div class="kpis">
-    <div class="kpi danger"><div class="v">{{kpi_pausadas}}</div><div class="l">Atualmente Pausadas</div></div>
-    <div class="kpi success"><div class="v">{{kpi_ativas}}</div><div class="l">Reativadas (status atual: ATIVA)</div></div>
-    <div class="kpi warn"><div class="v">{{kpi_pausas_30d}}</div><div class="l">Pausas nos últimos 30 dias</div></div>
-    <div class="kpi"><div class="v">{{kpi_ativacoes_30d}}</div><div class="l">Ativações nos últimos 30 dias</div></div>
+    <div class="kpi danger"><div class="v" id="kpi-pausadas">{{kpi_pausadas}}</div><div class="l">Pausadas <span class="kpi-suffix">no período</span></div></div>
+    <div class="kpi success"><div class="v" id="kpi-ativas">{{kpi_ativas}}</div><div class="l">Ativações <span class="kpi-suffix">no período</span></div></div>
+    <div class="kpi warn"><div class="v" id="kpi-saldo">{{kpi_saldo}}</div><div class="l">Saldo líquido <span class="kpi-suffix">(ativ − paus)</span></div></div>
+    <div class="kpi"><div class="v" id="kpi-unidades">{{kpi_unidades}}</div><div class="l">Unidades únicas <span class="kpi-suffix">no período</span></div></div>
   </div>
 
   <div class="tabs">
@@ -193,10 +195,10 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 
   <div class="tab-panel" id="tab-ltv">
     <div class="kpis">
-      <div class="kpi"><div class="v">{{ltv_count}}</div><div class="l">Pausas com tempo de permanência calculado</div></div>
-      <div class="kpi success"><div class="v">{{ltv_avg}}</div><div class="l">Média de dias ativos antes de pausar</div></div>
-      <div class="kpi warn"><div class="v">{{ltv_median}}</div><div class="l">Mediana (dias)</div></div>
-      <div class="kpi danger"><div class="v">{{ltv_max}}</div><div class="l">Máximo (dias)</div></div>
+      <div class="kpi"><div class="v" id="ltv-count">{{ltv_count}}</div><div class="l">Pausas com tempo de permanência calculado</div></div>
+      <div class="kpi success"><div class="v" id="ltv-avg">{{ltv_avg}}</div><div class="l">Média de dias ativos antes de pausar</div></div>
+      <div class="kpi warn"><div class="v" id="ltv-median">{{ltv_median}}</div><div class="l">Mediana (dias)</div></div>
+      <div class="kpi danger"><div class="v" id="ltv-max">{{ltv_max}}</div><div class="l">Máximo (dias)</div></div>
     </div>
 
     <div class="card" style="margin-bottom:24px">
@@ -229,13 +231,31 @@ th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:11px;le
 </div>
 
 <script>
-const gestoresData = {{gestores_json}};
-const consultoresData = {{consultores_json}};
-const timelineData = {{timeline_json}};
+// All events embedded — recomputado client-side conforme filtro de período
+const EVENTS = /*EVENTS_JSON*/;
+const CLASS_GESTOR = {
+  "gustavo":"Bueno","gustavo souza":"Mota","igor":"Igor",
+  "victor coutinho":"Victor","victor":"Victor",
+  "milena":"Milena","milena sabaini":"Milena","thiago braga":"Thiago Braga"
+};
+const CLASS_CONSULTOR = new Set(["brenda","brenda torres","dinha","dinha damasceno","lara","lara moreira","genilza","genilza gomes"]);
+function normName(s){ return (s||"").trim().toLowerCase().replace(/\\s+/g," "); }
+function classify(name){
+  const k = normName(name);
+  if (CLASS_GESTOR[k]) return "gestor";
+  if (CLASS_CONSULTOR.has(k)) return "consultor";
+  return "other";
+}
+
 const barOpts = {responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}};
-new Chart(document.getElementById('chartGestores').getContext('2d'),{type:'bar',data:{labels:gestoresData.labels,datasets:[{label:'Pausas',data:gestoresData.values,backgroundColor:'#58a6ffaa',borderColor:'#58a6ff',borderWidth:1}]},options:barOpts});
-new Chart(document.getElementById('chartConsultores').getContext('2d'),{type:'bar',data:{labels:consultoresData.labels,datasets:[{label:'Pausas',data:consultoresData.values,backgroundColor:'#d29922aa',borderColor:'#d29922',borderWidth:1}]},options:barOpts});
-new Chart(document.getElementById('chartTimeline').getContext('2d'),{type:'line',data:{labels:timelineData.labels,datasets:[{label:'Pausas',data:timelineData.pausas,borderColor:'#f85149',backgroundColor:'#f8514922',tension:.3,fill:true},{label:'Ativações',data:timelineData.ativas,borderColor:'#3fb950',backgroundColor:'#3fb95022',tension:.3,fill:true}]},options:{responsive:true,plugins:{legend:{labels:{color:'#e6edf3'}}},scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}}});
+const lineOpts = {responsive:true,plugins:{legend:{labels:{color:'#e6edf3'}}},scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}};
+
+const chartGestores   = new Chart(document.getElementById('chartGestores').getContext('2d'),   {type:'bar', data:{labels:[],datasets:[{label:'Pausas',data:[],backgroundColor:'#58a6ffaa',borderColor:'#58a6ff',borderWidth:1}]}, options:barOpts});
+const chartConsultores= new Chart(document.getElementById('chartConsultores').getContext('2d'),{type:'bar', data:{labels:[],datasets:[{label:'Pausas',data:[],backgroundColor:'#d29922aa',borderColor:'#d29922',borderWidth:1}]}, options:barOpts});
+const chartTimeline   = new Chart(document.getElementById('chartTimeline').getContext('2d'),   {type:'line',data:{labels:[],datasets:[
+  {label:'Pausas',data:[],borderColor:'#f85149',backgroundColor:'#f8514922',tension:.3,fill:true},
+  {label:'Ativações',data:[],borderColor:'#3fb950',backgroundColor:'#3fb95022',tension:.3,fill:true}
+]}, options:lineOpts});
 
 // table filter
 const tbl = document.getElementById('tbl');
@@ -330,7 +350,112 @@ function updateLabel(){
 
 function applyGlobalFilter(){
   updateLabel();
+  recomputeAll();
   if (typeof applyFilters === 'function') applyFilters();
+}
+
+// ===== Recomputação client-side dos KPIs e gráficos com base no filtro de período =====
+function filterByPeriod(arr){
+  return arr.filter(e => {
+    const d = (e.ts || "").slice(0,10);
+    if (globalStartISO && d < globalStartISO) return false;
+    if (globalEndISO && d > globalEndISO) return false;
+    return true;
+  });
+}
+
+function recomputeAll(){
+  const filtered = filterByPeriod(EVENTS);
+  recomputeKpis(filtered);
+  recomputeRoleCharts(filtered);
+  recomputeTimeline(filtered);
+  recomputeLtv(filtered);
+}
+
+function recomputeKpis(events){
+  const p = events.filter(e => e.type === "pausar").length;
+  const a = events.filter(e => e.type === "ativar").length;
+  const saldo = a - p;
+  const units = new Set(events.map(e => e.key)).size;
+  document.getElementById('kpi-pausadas').textContent = p;
+  document.getElementById('kpi-ativas').textContent  = a;
+  document.getElementById('kpi-saldo').textContent   = saldo > 0 ? "+"+saldo : saldo;
+  document.getElementById('kpi-unidades').textContent = units;
+}
+
+function recomputeRoleCharts(events){
+  const g = {}, c = {};
+  for (const e of events){
+    if (e.type !== "pausar") continue;
+    for (const m of (e.mentions || [])){
+      const role = classify(m);
+      if (role === "gestor")    g[m] = (g[m]||0)+1;
+      else if (role === "consultor") c[m] = (c[m]||0)+1;
+    }
+  }
+  const topG = Object.entries(g).sort((a,b) => b[1]-a[1]).slice(0,12);
+  const topC = Object.entries(c).sort((a,b) => b[1]-a[1]).slice(0,12);
+  chartGestores.data.labels    = topG.map(x => x[0]);
+  chartGestores.data.datasets[0].data = topG.map(x => x[1]);
+  chartGestores.update();
+  chartConsultores.data.labels = topC.map(x => x[0]);
+  chartConsultores.data.datasets[0].data = topC.map(x => x[1]);
+  chartConsultores.update();
+}
+
+function recomputeTimeline(events){
+  // Janela: usa range filtrado se houver, senão últimos 30 dias
+  let endDate, startDate;
+  if (globalStartISO && globalEndISO){
+    startDate = new Date(globalStartISO);
+    endDate = new Date(globalEndISO);
+  } else {
+    endDate = new Date();
+    startDate = new Date(); startDate.setDate(endDate.getDate()-29);
+  }
+  // Limite de 90 dias visíveis pra não ficar ilegível
+  const spanDays = Math.min(90, Math.round((endDate - startDate)/86400000) + 1);
+  const labels = [], pBuckets = {}, aBuckets = {};
+  const d = new Date(endDate);
+  d.setDate(d.getDate() - spanDays + 1);
+  for (let i=0; i<spanDays; i++){
+    const iso = d.toISOString().slice(0,10);
+    labels.push(iso.slice(8,10)+"/"+iso.slice(5,7));
+    pBuckets[iso] = 0; aBuckets[iso] = 0;
+    d.setDate(d.getDate()+1);
+  }
+  for (const e of events){
+    const iso = (e.ts||"").slice(0,10);
+    if (iso in pBuckets){
+      if (e.type === "pausar") pBuckets[iso]++;
+      else aBuckets[iso]++;
+    }
+  }
+  const orderedIsos = Object.keys(pBuckets);
+  chartTimeline.data.labels = labels;
+  chartTimeline.data.datasets[0].data = orderedIsos.map(k => pBuckets[k]);
+  chartTimeline.data.datasets[1].data = orderedIsos.map(k => aBuckets[k]);
+  chartTimeline.update();
+}
+
+function recomputeLtv(events){
+  const withLtv = events.filter(e => e.type === "pausar" && e.days_active != null);
+  const days = withLtv.map(e => e.days_active).sort((a,b)=>a-b);
+  const count = days.length;
+  const avg = count ? Math.round(days.reduce((s,x)=>s+x,0)/count) : 0;
+  const med = count ? days[Math.floor(count/2)] : 0;
+  const max = count ? days[count-1] : 0;
+  const ltvCount = document.getElementById('ltv-count');
+  const ltvAvg   = document.getElementById('ltv-avg');
+  const ltvMed   = document.getElementById('ltv-median');
+  const ltvMax   = document.getElementById('ltv-max');
+  if (ltvCount) ltvCount.textContent = count;
+  if (ltvAvg)   ltvAvg.textContent   = avg;
+  if (ltvMed)   ltvMed.textContent   = med;
+  if (ltvMax)   ltvMax.textContent   = max;
+  const buckets = LTV_BUCKETS.map(b => withLtv.filter(e => e.days_active >= b[0] && e.days_active <= b[1]).length);
+  chartLtvHist.data.datasets[0].data = buckets;
+  chartLtvHist.update();
 }
 
 function setPreset(preset){
@@ -383,11 +508,14 @@ for (const tab of document.querySelectorAll('.tab')){
   });
 }
 
-// LTV histogram chart
-const ltvHistData = {{ltv_hist_json}};
-new Chart(document.getElementById('chartLtvHist').getContext('2d'), {
+// LTV histogram chart — bucket labels fixos, valores recomputados
+const LTV_BUCKETS = [
+  [0, 30, "0-30 dias"],[31, 60, "31-60 dias"],[61, 90, "61-90 dias"],
+  [91, 180, "91-180 dias"],[181, 365, "181-365 dias"],[366, 99999, "1 ano+"]
+];
+const chartLtvHist = new Chart(document.getElementById('chartLtvHist').getContext('2d'), {
   type: 'bar',
-  data: {labels: ltvHistData.labels, datasets: [{label:'Unidades', data: ltvHistData.values, backgroundColor:'#58a6ffaa', borderColor:'#58a6ff', borderWidth: 1}]},
+  data: {labels: LTV_BUCKETS.map(b => b[2]), datasets: [{label:'Unidades', data: [], backgroundColor:'#58a6ffaa', borderColor:'#58a6ff', borderWidth: 1}]},
   options: {responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{color:'#8b949e'},grid:{color:'#30363d'}},x:{ticks:{color:'#8b949e'},grid:{display:false}}}}
 });
 
@@ -402,6 +530,9 @@ if (fLtvSearch && tblLtv){
     }
   });
 }
+
+// Boot: popula gráficos e KPIs com base no estado inicial (sem filtro)
+recomputeAll();
 </script>
 </body>
 </html>
@@ -486,24 +617,19 @@ def _rows_html(units: dict[str, dict]) -> str:
     return "\n".join(out)
 
 
-def _kpis(events: list[dict], units: dict[str, dict]) -> dict:
-    now = datetime.now(timezone.utc)
-    pausadas = sum(1 for u in units.values() if u["event_type"] == "pausar")
-    ativas = sum(1 for u in units.values() if u["event_type"] == "ativar")
-    cutoff = now.timestamp() - 30 * 86400
-    p30 = a30 = 0
-    for e in events:
-        try:
-            ts = datetime.fromisoformat(e["timestamp"]).timestamp()
-        except Exception:
-            continue
-        if ts < cutoff:
-            continue
-        if e["event_type"] == "pausar":
-            p30 += 1
-        else:
-            a30 += 1
-    return {"pausadas": pausadas, "ativas": ativas, "p30": p30, "a30": a30}
+def _kpis(events: list[dict]) -> dict:
+    """KPIs sobre TODOS os eventos (defaults da página, antes de qualquer filtro).
+    Recalculados client-side quando o filtro muda."""
+    pausadas = sum(1 for e in events if e["event_type"] == "pausar")
+    ativas = sum(1 for e in events if e["event_type"] == "ativar")
+    saldo = ativas - pausadas
+    unidades = len({e["unit_key"] for e in events})
+    return {
+        "pausadas": pausadas,
+        "ativas": ativas,
+        "saldo": saldo if saldo <= 0 else f"+{saldo}",
+        "unidades": unidades,
+    }
 
 
 def _ltv_data(events: list[dict]) -> dict:
@@ -705,10 +831,36 @@ def _timeline_chart(events: list[dict]) -> dict:
     }
 
 
+def _events_compact(events: list[dict]) -> list[dict]:
+    """Versão enxuta de cada evento, segura para embedar em JS."""
+    out = []
+    for e in events:
+        snap = e.get("cpl_snapshot") or {}
+        out.append({
+            "id": e["id"],
+            "type": e["event_type"],
+            "ts": e["timestamp"],
+            "unit": e["unit_name"],
+            "key": e["unit_key"],
+            "reason": e["reason"] or "",
+            "author": e["author"],
+            "mentions": e["mentions"],
+            "cpl": snap.get("cpl"),
+            "spend": snap.get("spend"),
+            "msgs": snap.get("msgs"),
+            "campaign": snap.get("campaign_name"),
+            "account": snap.get("account_name"),
+            "gestor_real": snap.get("gestor"),
+            "days_active": e.get("days_active"),
+            "activated_at": e.get("activated_at"),
+        })
+    return out
+
+
 def generate() -> Path:
     events = all_events()
     units = latest_event_per_unit()
-    kpis = _kpis(events, units)
+    kpis = _kpis(events)
     rows = _rows_html(units)
     gestores, consultores = _role_charts(events)
     gestor_chips, consultor_chips = _role_chips(events)
@@ -718,6 +870,7 @@ def generate() -> Path:
     ltv_rows = _ltv_rows_html(ltv)
     month_presets = _month_presets_html(events)
     updated = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    events_json = json.dumps(_events_compact(events), ensure_ascii=False, separators=(",", ":"))
 
     html = (PAGE_TEMPLATE
             .replace("{{updated_at}}", updated)
@@ -731,8 +884,8 @@ def generate() -> Path:
             .replace("{{month_presets_html}}", month_presets)
             .replace("{{kpi_pausadas}}", str(kpis["pausadas"]))
             .replace("{{kpi_ativas}}", str(kpis["ativas"]))
-            .replace("{{kpi_pausas_30d}}", str(kpis["p30"]))
-            .replace("{{kpi_ativacoes_30d}}", str(kpis["a30"]))
+            .replace("{{kpi_saldo}}", str(kpis["saldo"]))
+            .replace("{{kpi_unidades}}", str(kpis["unidades"]))
             .replace("{{rows_html}}", rows)
             .replace("{{gestor_chips_html}}", gestor_chips)
             .replace("{{consultor_chips_html}}", consultor_chips)
@@ -743,7 +896,8 @@ def generate() -> Path:
             .replace("{{count_60d}}", str(dc["60d"]))
             .replace("{{gestores_json}}", json.dumps(gestores))
             .replace("{{consultores_json}}", json.dumps(consultores))
-            .replace("{{timeline_json}}", json.dumps(timeline)))
+            .replace("{{timeline_json}}", json.dumps(timeline))
+            .replace("/*EVENTS_JSON*/", events_json))
 
     OUT_HTML.parent.mkdir(parents=True, exist_ok=True)
     OUT_HTML.write_text(html, encoding="utf-8")
