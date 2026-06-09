@@ -234,20 +234,26 @@ def main() -> None:
     @client.event
     async def on_ready() -> None:
         log.info("logado como %s (id=%s)", client.user, client.user.id)
-        # find target channel
+        # find target channel — retry até 6x se guilds ainda não populadas (race no reconnect)
         target = None
-        for guild in client.guilds:
-            if TARGET_GUILD_ID and str(guild.id) != TARGET_GUILD_ID:
-                continue
-            for ch in guild.text_channels:
-                if ch.name == TARGET_CHANNEL_NAME or TARGET_CHANNEL_NAME in ch.name:
-                    target = ch
-                    log.info("canal alvo: #%s (id=%s) no servidor %s", ch.name, ch.id, guild.name)
+        for attempt in range(6):
+            for guild in client.guilds:
+                if TARGET_GUILD_ID and str(guild.id) != TARGET_GUILD_ID:
+                    continue
+                for ch in guild.text_channels:
+                    if ch.name == TARGET_CHANNEL_NAME or TARGET_CHANNEL_NAME in ch.name:
+                        target = ch
+                        log.info("canal alvo: #%s (id=%s) no servidor %s", ch.name, ch.id, guild.name)
+                        break
+                if target:
                     break
             if target:
                 break
+            log.warning("canal '%s' não achado (tentativa %d/6, %d guilds carregadas) — aguardando...",
+                        TARGET_CHANNEL_NAME, attempt+1, len(client.guilds))
+            await asyncio.sleep(5)
         if not target:
-            log.error("canal '%s' não encontrado em nenhum servidor — saindo", TARGET_CHANNEL_NAME)
+            log.error("canal '%s' não encontrado em nenhum servidor após retries — saindo (LaunchAgent vai reiniciar)", TARGET_CHANNEL_NAME)
             await client.close()
             return
         if should_backfill:
