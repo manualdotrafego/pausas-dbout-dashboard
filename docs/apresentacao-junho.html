@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pausas Junho/2026 — Apresentação por Gestor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 32px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 15px; margin-bottom: 28px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
+  .chip {
+    background: var(--panel); border: 1.5px solid var(--border); color: var(--text);
+    padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip.active { background: var(--gestor-color, #3b82f6); border-color: var(--gestor-color, #3b82f6); color: #fff; }
+  .chip .count { background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .chip.active .count { background: rgba(0,0,0,0.25); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; margin-bottom: 20px;
+  }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .kpi .lbl { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi .val { font-size: 32px; font-weight: 700; margin-top: 4px; }
+  .chart-wrap { position: relative; height: 480px; }
+  .list { margin-top: 18px; max-height: 320px; overflow-y: auto; }
+  .list table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .list th, .list td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  .list th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+  .list td.data { color: var(--muted); white-space: nowrap; }
+  .list td.reason { color: var(--muted); max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .footer { color: var(--muted); font-size: 12px; margin-top: 32px; text-align: center; }
+  .footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pausas em Junho/2026 — por Gestor</h1>
+  <div class="sub">Clique num gestor abaixo para ver a linha do tempo das pausas. Dados extraídos do canal #financeiro (Discord DBOUT).</div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="lbl">Unidades pausadas</div><div class="val" id="kpi-total">–</div></div>
+    <div class="kpi"><div class="lbl">Dias com pausa</div><div class="val" id="kpi-dias">–</div></div>
+    <div class="kpi"><div class="lbl">Reativações no mês</div><div class="val">0</div></div>
+    <div class="kpi"><div class="lbl">Evasão</div><div class="val">100%</div></div>
+  </div>
+
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    <div class="list">
+      <table>
+        <thead><tr><th>Data</th><th>Unidade</th><th>Motivo</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">
+    Gerado automaticamente · Dashboard completo em <a href="index.html">/index.html</a>
+  </div>
+</div>
+
+<script>
+const DATA = {"Bueno": [{"unit": "Itabuna", "key": "itabuna", "ts": "2026-06-01T12:35:25.300000+00:00", "reason": ""}, {"unit": "Porto Alegre", "key": "porto alegre", "ts": "2026-06-01T17:50:37.820000+00:00", "reason": ""}, {"unit": "Recife Rua do Hospicio", "key": "recife rua do hospicio", "ts": "2026-06-02T12:40:16.450000+00:00", "reason": ""}, {"unit": "Guanambi", "key": "guanambi", "ts": "2026-06-10T14:03:07.912000+00:00", "reason": "Não continuarão"}], "Victor": [{"unit": "Odonto Excellence Santo Antônio da Patrulha", "key": "odonto excellence santo antonio da patrulha", "ts": "2026-06-02T13:21:59.412000+00:00", "reason": ""}, {"unit": "Implandom Brasilia Asa Norte", "key": "implandom brasilia asa norte", "ts": "2026-06-02T17:45:20.556000+00:00", "reason": "Pagamento em atraso."}, {"unit": "Odonto Excellence Dourados", "key": "odonto excellence dourados", "ts": "2026-06-03T12:26:38.788000+00:00", "reason": ""}, {"unit": "OralClin Januária", "key": "oralclin januaria", "ts": "2026-06-05T17:41:37.968000+00:00", "reason": "Estão analisando se irão continuar."}, {"unit": "OralDents Baixo Guandu", "key": "oraldents baixo guandu", "ts": "2026-06-08T14:53:01.581000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Ibiporã 2", "key": "ibipora 2", "ts": "2026-06-09T11:45:06.656000+00:00", "reason": "Falta de resultados Mas o problema é que houve muitos banimentos nesse período. Me informar quanto tem de saldo e até que dia"}, {"unit": "Nova Face Jaru", "key": "nova face jaru", "ts": "2026-06-10T13:40:57.119000+00:00", "reason": "Estão sem CRC e querendo pausar por um tempo."}, {"unit": "Oral Sin Planaltina DF", "key": "oral sin planaltina df", "ts": "2026-06-10T14:49:52.394000+00:00", "reason": "Não continuarão"}, {"unit": "Odonto Excellence São João do Ivai", "key": "odonto excellence sao joao do ivai", "ts": "2026-06-11T13:33:00.008000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Sorriso Cametá", "key": "sorriso cameta", "ts": "2026-06-11T17:26:53.149000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Implandon Brasilia", "key": "implandon brasilia", "ts": "2026-06-15T12:24:23.019000+00:00", "reason": "Pagamento em atraso."}, {"unit": "ODC Paranaíba", "key": "odc paranaiba", "ts": "2026-06-15T19:20:41.838000+00:00", "reason": "Estão sem funcionário para atender os leads, tiveram 3 baixas na equipe esse mês."}, {"unit": "clean dental nova  Iguaçu", "key": "clean dental nova iguacu", "ts": "2026-06-16T12:51:35.502000+00:00", "reason": "irão alterar os processos internos e em breve retornam"}, {"unit": "Sorrix Sabara", "key": "sorrix sabara", "ts": "2026-06-16T14:21:56.743000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Odonto Company Santo Amaro", "key": "odonto company santo amaro", "ts": "2026-06-16T18:35:43.731000+00:00", "reason": ""}, {"unit": "Dr Paulo Barra", "key": "dr paulo barra", "ts": "2026-06-17T17:38:56.397000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Orthoface Belem PA", "key": "orthoface belem pa", "ts": "2026-06-18T14:34:57.950000+00:00", "reason": "Pagamento em atraso"}, {"unit": "G7 Implantes Joinville", "key": "g7 implantes joinville", "ts": "2026-06-22T20:06:08.082000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Odonto Excellence Três de Maio", "key": "odonto excellence tres de maio", "ts": "2026-06-23T14:56:55.945000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Odonto Vip Volta Redonda", "key": "odonto vip volta redonda", "ts": "2026-06-25T12:20:30.011000+00:00", "reason": "Pagamento em atraso."}, {"unit": "São João do Ivai", "key": "sao joao do ivai", "ts": "2026-06-25T13:04:09.254000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Clínica Betoni Cuiába", "key": "clinica betoni cuiaba", "ts": "2026-06-26T18:29:17.831000+00:00", "reason": "Estão verificando se irão manter."}], "Thiago Braga": [{"unit": "Campo Bom RS", "key": "campo bom rs", "ts": "2026-06-02T19:30:18.743000+00:00", "reason": "Não continuarão, estão sem ninguém para acompanhar os leads."}, {"unit": "Odonto Excellence Corumba", "key": "odonto excellence corumba", "ts": "2026-06-03T12:27:02.808000+00:00", "reason": "pagamento em atraso"}, {"unit": "Mídias Catalão GO", "key": "midias catalao go", "ts": "2026-06-09T13:49:55.944000+00:00", "reason": "Performance dos leads Me informa se tem saldo e até que dia."}, {"unit": "Coife Acarau", "key": "coife acarau", "ts": "2026-06-10T13:34:17.104000+00:00", "reason": "Pagamento em atraso."}, {"unit": "Ams Odontologia Vila Velha", "key": "ams odontologia vila velha", "ts": "2026-06-11T20:25:43.200000+00:00", "reason": "Não continurão"}, {"unit": "Caetité", "key": "caetite", "ts": "2026-06-15T12:17:22.279000+00:00", "reason": "Não continuarão."}, {"unit": "Orthodontic Vilaça <@1431434979665252402> <@1470806703585886442>", "key": "orthodontic vilaca 1431434979665252402 1470806703585886442", "ts": "2026-06-15T14:10:41.990000+00:00", "reason": "Pediram para desativar as campanhas mais rapido possivel, desvinculando número e o cartão de onde era consumido o saldo. Vão preencher o forms e coloco aqui o motivo que informaram"}, {"unit": "OralDents Aimores", "key": "oraldents aimores", "ts": "2026-06-16T12:52:16.115000+00:00", "reason": "Funcionara que cuida dos leads entrou de férias, devem retornar mês que vem."}, {"unit": "+Odonto Taguatinga", "key": "odonto taguatinga", "ts": "2026-06-17T12:35:15.815000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Odontoclinic Mooca", "key": "odontoclinic mooca", "ts": "2026-06-23T14:52:40.903000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}], "Mota": [{"unit": "Previna Odonto SP", "key": "previna odonto sp", "ts": "2026-06-03T17:16:46.888000+00:00", "reason": "Irão analisar se irão continuar."}, {"unit": "Monte Carmelo", "key": "monte carmelo", "ts": "2026-06-10T14:58:44.725000+00:00", "reason": "Estão analisando se irão manter as campanhas ativas."}, {"unit": "OralDents Timoteo", "key": "oraldents timoteo", "ts": "2026-06-10T17:03:44.444000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Multisorrisos Aparecida de Goiania", "key": "multisorrisos aparecida de goiania", "ts": "2026-06-11T14:20:48.791000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Lagoamar Maceio", "key": "lagoamar maceio", "ts": "2026-06-11T20:40:27.228000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Orthopride São Mateus", "key": "orthopride sao mateus", "ts": "2026-06-12T14:21:34.307000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Clinica Dentaria Santo Antonio Osasco", "key": "clinica dentaria santo antonio osasco", "ts": "2026-06-12T17:39:05.342000+00:00", "reason": "Pagamento em atraso, estão analisando se continuarão."}, {"unit": "Previna Odonto Pedreira SP", "key": "previna odonto pedreira sp", "ts": "2026-06-15T14:36:08.781000+00:00", "reason": "Pagamento em atraso (Pagou o fee e deixou o investimento do meta pendente)."}, {"unit": "Belford Roxo e Nova Iguaçu", "key": "belford roxo e nova iguacu", "ts": "2026-06-20T12:24:11.605000+00:00", "reason": ""}, {"unit": "Odonto Gama Porto Nacional", "key": "odonto gama porto nacional", "ts": "2026-06-26T12:28:06.557000+00:00", "reason": "Não continuarão"}, {"unit": "Odonto Company Unai", "key": "odonto company unai", "ts": "2026-06-26T13:29:01.503000+00:00", "reason": "Pagamento em atraso"}], "Sem gestor": [{"unit": "OralDents Espera Feliz", "key": "oraldents espera feliz", "ts": "2026-06-05T14:52:30.706000+00:00", "reason": "Não continuarão."}], "Igor": [{"unit": "Rennovar Juiz de Fora", "key": "rennovar juiz de fora", "ts": "2026-06-05T20:23:20.735000+00:00", "reason": "não continuarão"}, {"unit": "João Neiva", "key": "joao neiva", "ts": "2026-06-08T12:36:22.235000+00:00", "reason": "vão dar uma pausa e retomam nos próximos meses"}, {"unit": "Santo André parque das nações", "key": "santo andre parque das nacoes", "ts": "2026-06-09T11:38:11.235000+00:00", "reason": "entrada de lead"}, {"unit": "OralDents Mariana", "key": "oraldents mariana", "ts": "2026-06-09T16:27:17.855000+00:00", "reason": "Não continuarão"}, {"unit": "Odonto Excellence Lajeado", "key": "odonto excellence lajeado", "ts": "2026-06-09T19:38:23.888000+00:00", "reason": "Pagamento em atraso."}, {"unit": "Florianopolis Deodoro", "key": "florianopolis deodoro", "ts": "2026-06-15T12:33:31.520000+00:00", "reason": "Não continuarão esse mês."}, {"unit": "OralDents Cabo Frio", "key": "oraldents cabo frio", "ts": "2026-06-15T18:31:16.742000+00:00", "reason": "Pagamento em atraso"}, {"unit": "ODC Cariri - Juazeiro do Norte", "key": "odc cariri juazeiro do norte", "ts": "2026-06-19T16:46:08.695000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Rio do Sul", "key": "rio do sul", "ts": "2026-06-23T12:47:50.581000+00:00", "reason": "Pagamento em atraso."}, {"unit": "Ituporanga", "key": "ituporanga", "ts": "2026-06-23T12:48:09.626000+00:00", "reason": "Pagamento em atraso."}], "Milena": [{"unit": "Doctor Smile Itauna", "key": "doctor smile itauna", "ts": "2026-06-08T14:07:49.031000+00:00", "reason": "Assim que encerrar o saldo, estão com problemas financeiros."}, {"unit": "OralDents Jaguariuna", "key": "oraldents jaguariuna", "ts": "2026-06-08T18:29:46.514000+00:00", "reason": "Pagameno em atraso"}, {"unit": "Coife Baturité", "key": "coife baturite", "ts": "2026-06-12T19:28:52.234000+00:00", "reason": "Não continuarão esse mês, assim que encerrar o saldo."}, {"unit": "OralDents Santo Antonio Padua", "key": "oraldents santo antonio padua", "ts": "2026-06-15T19:11:26.458000+00:00", "reason": "Pausarão as campanhas esse final do mês e retornarão em julho"}, {"unit": "Sinop", "key": "sinop", "ts": "2026-06-19T13:51:52.356000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Rondonopolis", "key": "rondonopolis", "ts": "2026-06-19T13:52:21.660000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Primavera do Leste", "key": "primavera do leste", "ts": "2026-06-19T13:52:52.446000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Lucas do Rio Verde", "key": "lucas do rio verde", "ts": "2026-06-19T13:53:30.332000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Nova Mutum", "key": "nova mutum", "ts": "2026-06-19T13:54:05.515000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Sorriso", "key": "sorriso", "ts": "2026-06-19T13:55:16.880000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}, {"unit": "Odontoclinic Lapa", "key": "odontoclinic lapa", "ts": "2026-06-23T14:52:53.088000+00:00", "reason": "Assim que encerrar o saldo, não continuarão."}]};
+const CORES = {"Victor": "#ef4444", "Thiago Braga": "#f59e0b", "Milena": "#3b82f6", "Mota": "#10b981", "Igor": "#a855f7", "Bueno": "#14b8a6"};
+
+const chips = document.getElementById("chips");
+const gestores = Object.keys(DATA).sort((a,b) => DATA[b].length - DATA[a].length);
+
+let atual = gestores[0];
+
+gestores.forEach(g => {
+  const el = document.createElement("div");
+  el.className = "chip";
+  el.style.setProperty("--gestor-color", CORES[g] || "#666");
+  el.innerHTML = `${g} <span class="count">${DATA[g].length}</span>`;
+  el.onclick = () => { atual = g; render(); };
+  chips.appendChild(el);
+});
+
+const ctx = document.getElementById("chart").getContext("2d");
+let chart;
+
+function render() {
+  // chip ativo
+  Array.from(chips.children).forEach((el, i) => {
+    el.classList.toggle("active", gestores[i] === atual);
+  });
+
+  const pausas = DATA[atual] || [];
+  const cor = CORES[atual] || "#3b82f6";
+
+  // Empilha múltiplas pausas no mesmo dia
+  const contDia = {};
+  const pontos = pausas.map(p => {
+    const dia = p.ts.slice(0, 10);
+    contDia[dia] = (contDia[dia] || 0) + 1;
+    return { x: p.ts.slice(0, 10), y: contDia[dia], unit: p.unit, reason: p.reason, ts: p.ts };
+  });
+
+  const cfg = {
+    type: "scatter",
+    data: {
+      datasets: [{
+        label: atual,
+        data: pontos,
+        backgroundColor: cor,
+        borderColor: "#fff",
+        borderWidth: 1.5,
+        pointRadius: 9,
+        pointHoverRadius: 12,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "day", displayFormats: { day: "dd/MM" }, tooltipFormat: "dd/MM/yyyy" },
+          min: "2026-05-31",
+          max: "2026-07-01",
+          grid: { color: "#30363d40" },
+          ticks: { color: "#8b949e" },
+        },
+        y: {
+          beginAtZero: true,
+          min: 0,
+          max: Math.max(3, Math.max(...pontos.map(p => p.y), 0) + 1),
+          grid: { display: false },
+          ticks: { display: false },
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "#161b22",
+          borderColor: cor,
+          borderWidth: 1,
+          titleColor: "#e6edf3",
+          bodyColor: "#e6edf3",
+          padding: 12,
+          callbacks: {
+            title: (items) => items[0].raw.unit,
+            label: (item) => {
+              const d = new Date(item.raw.ts);
+              return d.toLocaleDateString("pt-BR");
+            },
+            afterLabel: (item) => item.raw.reason ? "\n" + item.raw.reason : "",
+          }
+        }
+      }
+    }
+  };
+
+  if (chart) { chart.destroy(); }
+  chart = new Chart(ctx, cfg);
+
+  // KPIs
+  document.getElementById("kpi-total").textContent = pausas.length;
+  document.getElementById("kpi-dias").textContent = Object.keys(contDia).length;
+
+  // Lista
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  pausas.slice().sort((a,b) => a.ts.localeCompare(b.ts)).forEach(p => {
+    const tr = document.createElement("tr");
+    const d = new Date(p.ts).toLocaleDateString("pt-BR");
+    tr.innerHTML = `<td class="data">${d}</td><td><b>${p.unit}</b></td><td class="reason">${p.reason || "—"}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+render();
+</script>
+</body>
+</html>
