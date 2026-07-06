@@ -128,8 +128,8 @@ HTML = r"""<!doctype html>
   <div class="chips" id="chips"></div>
 
   <div class="kpis">
-    <div class="kpi"><div class="lbl">Unidades pausadas</div><div class="val" id="kpi-total">–</div></div>
-    <div class="kpi"><div class="lbl">Dias com pausa</div><div class="val" id="kpi-dias">–</div></div>
+    <div class="kpi"><div class="lbl" id="kpi-lbl-total">Unidades pausadas</div><div class="val" id="kpi-total">–</div></div>
+    <div class="kpi"><div class="lbl" id="kpi-lbl-2">Dias com pausa</div><div class="val" id="kpi-dias">–</div></div>
     <div class="kpi"><div class="lbl">Reativações no mês</div><div class="val">0</div></div>
     <div class="kpi"><div class="lbl">Evasão</div><div class="val">100%</div></div>
   </div>
@@ -155,8 +155,17 @@ const CORES = /*CORES_JSON*/;
 
 const chips = document.getElementById("chips");
 const gestores = Object.keys(DATA).sort((a,b) => DATA[b].length - DATA[a].length);
+const TOTAL_ALL = gestores.reduce((s,g) => s + DATA[g].length, 0);
 
-let atual = gestores[0];
+let atual = "__todos__";
+
+// Chip "Todos" (home)
+const chipTodos = document.createElement("div");
+chipTodos.className = "chip";
+chipTodos.style.setProperty("--gestor-color", "#e6edf3");
+chipTodos.innerHTML = `Todos <span class="count">${TOTAL_ALL}</span>`;
+chipTodos.onclick = () => { atual = "__todos__"; render(); };
+chips.appendChild(chipTodos);
 
 gestores.forEach(g => {
   const el = document.createElement("div");
@@ -172,34 +181,38 @@ let chart;
 
 function render() {
   // chip ativo
-  Array.from(chips.children).forEach((el, i) => {
-    el.classList.toggle("active", gestores[i] === atual);
-  });
+  const chipsArr = Array.from(chips.children);
+  chipsArr[0].classList.toggle("active", atual === "__todos__");
+  gestores.forEach((g, i) => chipsArr[i+1].classList.toggle("active", g === atual));
 
-  const pausas = DATA[atual] || [];
-  const cor = CORES[atual] || "#3b82f6";
+  if (chart) { chart.destroy(); }
 
-  // Empilha múltiplas pausas no mesmo dia
-  const contDia = {};
-  const pontos = pausas.map(p => {
-    const dia = p.ts.slice(0, 10);
-    contDia[dia] = (contDia[dia] || 0) + 1;
-    return { x: p.ts.slice(0, 10), y: contDia[dia], unit: p.unit, reason: p.reason, ts: p.ts };
-  });
+  if (atual === "__todos__") {
+    renderTodos();
+  } else {
+    renderGestor(atual);
+  }
+}
 
-  const cfg = {
+function renderTodos() {
+  // Swimlane: uma linha por gestor, todas as pausas do mês
+  const ordem = gestores.slice();  // já ordenado por volume desc
+  const datasets = ordem.map((g, i) => ({
+    label: g,
+    data: DATA[g].map(p => ({
+      x: p.ts.slice(0, 10), y: ordem.length - 1 - i,
+      unit: p.unit, reason: p.reason, ts: p.ts, gestor: g,
+    })),
+    backgroundColor: CORES[g] || "#666",
+    borderColor: "#fff",
+    borderWidth: 1.2,
+    pointRadius: 8,
+    pointHoverRadius: 11,
+  }));
+
+  chart = new Chart(ctx, {
     type: "scatter",
-    data: {
-      datasets: [{
-        label: atual,
-        data: pontos,
-        backgroundColor: cor,
-        borderColor: "#fff",
-        borderWidth: 1.5,
-        pointRadius: 9,
-        pointHoverRadius: 12,
-      }]
-    },
+    data: { datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -207,51 +220,120 @@ function render() {
         x: {
           type: "time",
           time: { unit: "day", displayFormats: { day: "dd/MM" }, tooltipFormat: "dd/MM/yyyy" },
-          min: "2026-05-31",
-          max: "2026-07-01",
-          grid: { color: "#30363d40" },
-          ticks: { color: "#8b949e" },
+          min: "2026-05-31", max: "2026-07-01",
+          grid: { color: "#30363d40" }, ticks: { color: "#8b949e" },
         },
         y: {
-          beginAtZero: true,
-          min: 0,
-          max: Math.max(3, Math.max(...pontos.map(p => p.y), 0) + 1),
-          grid: { display: false },
-          ticks: { display: false },
-        }
+          min: -0.5, max: ordem.length - 0.5,
+          grid: { color: "#30363d40" },
+          ticks: {
+            stepSize: 1, color: "#e6edf3", font: { weight: "bold", size: 13 },
+            callback: (v) => ordem[ordem.length - 1 - v] || "",
+          },
+        },
       },
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: "#161b22",
-          borderColor: cor,
-          borderWidth: 1,
-          titleColor: "#e6edf3",
-          bodyColor: "#e6edf3",
-          padding: 12,
+          backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
+          titleColor: "#e6edf3", bodyColor: "#e6edf3", padding: 12,
           callbacks: {
             title: (items) => items[0].raw.unit,
-            label: (item) => {
-              const d = new Date(item.raw.ts);
-              return d.toLocaleDateString("pt-BR");
-            },
+            label: (item) => `${item.raw.gestor} · ${new Date(item.raw.ts).toLocaleDateString("pt-BR")}`,
             afterLabel: (item) => item.raw.reason ? "\n" + item.raw.reason : "",
           }
         }
       }
     }
-  };
-
-  if (chart) { chart.destroy(); }
-  chart = new Chart(ctx, cfg);
+  });
 
   // KPIs
+  document.getElementById("kpi-lbl-total").textContent = "Total pausadas";
+  document.getElementById("kpi-lbl-2").textContent = "Gestores atingidos";
+  document.getElementById("kpi-total").textContent = TOTAL_ALL;
+  document.getElementById("kpi-dias").textContent = gestores.length;
+
+  // Lista: todas as pausas, ordenadas por data
+  const todas = [];
+  gestores.forEach(g => DATA[g].forEach(p => todas.push({...p, gestor: g})));
+  todas.sort((a,b) => a.ts.localeCompare(b.ts));
+
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  // header dinâmico
+  document.querySelector("thead tr").innerHTML =
+    "<th>Data</th><th>Gestor</th><th>Unidade</th><th>Motivo</th>";
+  todas.forEach(p => {
+    const tr = document.createElement("tr");
+    const d = new Date(p.ts).toLocaleDateString("pt-BR");
+    const cor = CORES[p.gestor] || "#666";
+    tr.innerHTML = `<td class="data">${d}</td>
+      <td><span style="color:${cor};font-weight:600">${p.gestor}</span></td>
+      <td><b>${p.unit}</b></td>
+      <td class="reason">${p.reason || "—"}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderGestor(g) {
+  const pausas = DATA[g] || [];
+  const cor = CORES[g] || "#3b82f6";
+
+  const contDia = {};
+  const pontos = pausas.map(p => {
+    const dia = p.ts.slice(0, 10);
+    contDia[dia] = (contDia[dia] || 0) + 1;
+    return { x: dia, y: contDia[dia], unit: p.unit, reason: p.reason, ts: p.ts };
+  });
+
+  chart = new Chart(ctx, {
+    type: "scatter",
+    data: {
+      datasets: [{
+        label: g, data: pontos,
+        backgroundColor: cor, borderColor: "#fff", borderWidth: 1.5,
+        pointRadius: 9, pointHoverRadius: 12,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "day", displayFormats: { day: "dd/MM" }, tooltipFormat: "dd/MM/yyyy" },
+          min: "2026-05-31", max: "2026-07-01",
+          grid: { color: "#30363d40" }, ticks: { color: "#8b949e" },
+        },
+        y: {
+          beginAtZero: true, min: 0,
+          max: Math.max(3, Math.max(...pontos.map(p => p.y), 0) + 1),
+          grid: { display: false }, ticks: { display: false },
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "#161b22", borderColor: cor, borderWidth: 1,
+          titleColor: "#e6edf3", bodyColor: "#e6edf3", padding: 12,
+          callbacks: {
+            title: (items) => items[0].raw.unit,
+            label: (item) => new Date(item.raw.ts).toLocaleDateString("pt-BR"),
+            afterLabel: (item) => item.raw.reason ? "\n" + item.raw.reason : "",
+          }
+        }
+      }
+    }
+  });
+
+  document.getElementById("kpi-lbl-total").textContent = "Unidades pausadas";
+  document.getElementById("kpi-lbl-2").textContent = "Dias com pausa";
   document.getElementById("kpi-total").textContent = pausas.length;
   document.getElementById("kpi-dias").textContent = Object.keys(contDia).length;
 
-  // Lista
   const tbody = document.getElementById("tbody");
   tbody.innerHTML = "";
+  document.querySelector("thead tr").innerHTML =
+    "<th>Data</th><th>Unidade</th><th>Motivo</th>";
   pausas.slice().sort((a,b) => a.ts.localeCompare(b.ts)).forEach(p => {
     const tr = document.createElement("tr");
     const d = new Date(p.ts).toLocaleDateString("pt-BR");
