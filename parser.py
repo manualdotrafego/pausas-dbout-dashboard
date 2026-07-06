@@ -25,8 +25,8 @@ PAUSE_HEAD_RE = re.compile(
 
 ACTIVATE_HEAD_RE = re.compile(
     r"^\s*"
-    r"(?:✅\s*)?"
-    r"(?P<verb>ativar?)\s+"
+    r"(?:✅\s*|🔄\s*)?"
+    r"(?P<verb>(?:re)?ativar?)\s+"
     r"(?P<rest>.+)$",
     re.IGNORECASE,
 )
