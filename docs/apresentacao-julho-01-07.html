@@ -1,111 +1,9 @@
-"""Gera página estática interativa (Chart.js) com timeline de pausas por gestor.
-
-Saída: docs/<out>.html — chips clicáveis, gráfico muda ao clicar.
-
-Uso:
-    python3 gerar_apresentacao_html.py                                  # junho default
-    python3 gerar_apresentacao_html.py --start 2026-07-01 --end 2026-07-08 \\
-        --title "Julho/2026 (01-07)" --out apresentacao-julho-01-07.html \\
-        --x-min 2026-06-30 --x-max 2026-07-08
-"""
-from __future__ import annotations
-import argparse
-import json
-import sys
-from collections import defaultdict
-from datetime import datetime
-from pathlib import Path
-
-HERE = Path(__file__).parent
-sys.path.insert(0, str(HERE))
-from db import get_conn
-from cpl_lookup import classify, MENTION_TO_GESTOR
-
-START = "2026-06-01T00:00:00"
-END   = "2026-07-01T00:00:00"
-X_MIN = "2026-05-31"
-X_MAX = "2026-07-01"
-TITLE = "Junho/2026"
-OUT   = "apresentacao-junho.html"
-
-CORES = {
-    "Victor":       "#ef4444",
-    "Thiago Braga": "#f59e0b",
-    "Milena":       "#3b82f6",
-    "Mota":         "#10b981",
-    "Igor":         "#a855f7",
-    "Bueno":        "#14b8a6",
-}
-
-
-def _fetch():
-    with get_conn() as con:
-        return con.execute(
-            """SELECT unit_name, unit_key, timestamp, mentions_json, reason FROM events
-               WHERE event_type='pausar' AND timestamp >= ? AND timestamp < ?
-               ORDER BY timestamp ASC""",
-            (START, END),
-        ).fetchall()
-
-
-def _count_reativacoes():
-    """Conta unidades que pausaram no período E reativaram (ativar posterior à pausa)."""
-    with get_conn() as con:
-        pausas = con.execute(
-            """SELECT DISTINCT unit_key, MIN(timestamp) as ts_p FROM events
-               WHERE event_type='pausar' AND timestamp >= ? AND timestamp < ?
-               GROUP BY unit_key""",
-            (START, END),
-        ).fetchall()
-        reat = 0
-        for p in pausas:
-            hit = con.execute(
-                """SELECT 1 FROM events WHERE unit_key=? AND event_type='ativar' AND timestamp > ? LIMIT 1""",
-                (p["unit_key"], p["ts_p"]),
-            ).fetchone()
-            if hit:
-                reat += 1
-        return reat, len(pausas)
-
-
-def _gestor_of(mentions_json: str) -> str | None:
-    ms = json.loads(mentions_json or "[]")
-    for m in ms:
-        if classify(m) == "gestor":
-            k = m.strip().lower().replace("  ", " ")
-            return MENTION_TO_GESTOR.get(k, m)
-    return None
-
-
-def _build_data():
-    rows = _fetch()
-    por_gestor: dict[str, list] = defaultdict(list)
-    for r in rows:
-        g = _gestor_of(r["mentions_json"]) or "Sem gestor"
-        por_gestor[g].append({
-            "unit": r["unit_name"],
-            "key": r["unit_key"],
-            "ts": r["timestamp"],
-            "reason": (r["reason"] or "")[:200],
-        })
-    # dedup: mantém 1ª pausa por unit_key dentro do mês
-    for g in list(por_gestor.keys()):
-        seen, out = set(), []
-        for p in por_gestor[g]:
-            if p["key"] in seen:
-                continue
-            seen.add(p["key"])
-            out.append(p)
-        por_gestor[g] = out
-    return por_gestor
-
-
-HTML = r"""<!doctype html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pausas /*TITLE*/ — Apresentação por Gestor</title>
+<title>Pausas Julho/2026 (01-07) — Apresentação por Gestor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
@@ -153,7 +51,7 @@ HTML = r"""<!doctype html>
 </head>
 <body>
 <div class="wrap">
-  <h1>Pausas em /*TITLE*/ — por Gestor</h1>
+  <h1>Pausas em Julho/2026 (01-07) — por Gestor</h1>
   <div class="sub">Clique num gestor abaixo para ver a linha do tempo das pausas. Dados extraídos do canal #financeiro (Discord DBOUT).</div>
 
   <div class="chips" id="chips"></div>
@@ -161,8 +59,8 @@ HTML = r"""<!doctype html>
   <div class="kpis">
     <div class="kpi"><div class="lbl" id="kpi-lbl-total">Unidades pausadas</div><div class="val" id="kpi-total">–</div></div>
     <div class="kpi"><div class="lbl" id="kpi-lbl-2">Dias com pausa</div><div class="val" id="kpi-dias">–</div></div>
-    <div class="kpi"><div class="lbl">Reativações no período</div><div class="val">/*REATIV*/</div></div>
-    <div class="kpi"><div class="lbl">Evasão</div><div class="val">/*EVASAO*/</div></div>
+    <div class="kpi"><div class="lbl">Reativações no período</div><div class="val">3</div></div>
+    <div class="kpi"><div class="lbl">Evasão</div><div class="val">77%</div></div>
   </div>
 
   <div class="card">
@@ -181,8 +79,8 @@ HTML = r"""<!doctype html>
 </div>
 
 <script>
-const DATA = /*DATA_JSON*/;
-const CORES = /*CORES_JSON*/;
+const DATA = {"Victor": [{"unit": "Be Happy Poços de Caldas", "key": "be happy pocos de caldas", "ts": "2026-07-01T12:43:01.742000+00:00", "reason": "Informou que durante a copa está sem comparecimento."}, {"unit": "Hospital Vitallys Santa Inês", "key": "hospital vitallys santa ines", "ts": "2026-07-03T14:13:53.725000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Implandom Brasilia Asa Norte", "key": "implandom brasilia asa norte", "ts": "2026-07-06T17:09:46.569000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Odonto Excellence Caxias do Sul", "key": "odonto excellence caxias do sul", "ts": "2026-07-07T11:37:50.579000+00:00", "reason": "Entrada de lead e lead distante"}], "Milena": [{"unit": "Orthopride São Caetano do Sul", "key": "orthopride sao caetano do sul", "ts": "2026-07-01T13:13:52.914000+00:00", "reason": "Não continuarão."}, {"unit": "Oralday Botelhos", "key": "oralday botelhos", "ts": "2026-07-06T14:44:25.083000+00:00", "reason": "Não continuarão"}], "Igor": [{"unit": "Orthopride Belo Horizonte", "key": "orthopride belo horizonte", "ts": "2026-07-01T18:00:10.077000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Dr Sorriso", "key": "dr sorriso", "ts": "2026-07-06T20:52:39.223000+00:00", "reason": "Não continuarão"}], "Mota": [{"unit": "Global Sorriso Soure", "key": "global sorriso soure", "ts": "2026-07-02T12:39:37.656000+00:00", "reason": "Informaram que vão retornar em agosto"}], "Thiago Braga": [{"unit": "Uberlândia Avenida Floriano Peixoto", "key": "uberlandia avenida floriano peixoto", "ts": "2026-07-06T12:39:20.300000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Odonto Excellence Corumba", "key": "odonto excellence corumba", "ts": "2026-07-06T18:06:50.426000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Rio de Janeiro - Madureira", "key": "rio de janeiro madureira", "ts": "2026-07-06T18:44:06.269000+00:00", "reason": "Não continuarão"}, {"unit": "+Odonto Taguatinga", "key": "odonto taguatinga", "ts": "2026-07-07T14:37:33.959000+00:00", "reason": "Pagamento em atraso"}]};
+const CORES = {"Victor": "#ef4444", "Thiago Braga": "#f59e0b", "Milena": "#3b82f6", "Mota": "#10b981", "Igor": "#a855f7", "Bueno": "#14b8a6"};
 
 const chips = document.getElementById("chips");
 const gestores = Object.keys(DATA).sort((a,b) => DATA[b].length - DATA[a].length);
@@ -251,7 +149,7 @@ function renderTodos() {
         x: {
           type: "time",
           time: { unit: "day", displayFormats: { day: "dd/MM" }, tooltipFormat: "dd/MM/yyyy" },
-          min: "/*X_MIN*/", max: "/*X_MAX*/",
+          min: "2026-06-30", max: "2026-07-08",
           grid: { color: "#30363d40" }, ticks: { color: "#8b949e" },
         },
         y: {
@@ -332,7 +230,7 @@ function renderGestor(g) {
         x: {
           type: "time",
           time: { unit: "day", displayFormats: { day: "dd/MM" }, tooltipFormat: "dd/MM/yyyy" },
-          min: "/*X_MIN*/", max: "/*X_MAX*/",
+          min: "2026-06-30", max: "2026-07-08",
           grid: { color: "#30363d40" }, ticks: { color: "#8b949e" },
         },
         y: {
@@ -377,57 +275,3 @@ render();
 </script>
 </body>
 </html>
-"""
-
-
-def main():
-    global START, END, X_MIN, X_MAX, TITLE, OUT
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--start", default="2026-06-01", help="YYYY-MM-DD (inclusive)")
-    ap.add_argument("--end",   default="2026-07-01", help="YYYY-MM-DD (exclusive)")
-    ap.add_argument("--title", default="Junho/2026")
-    ap.add_argument("--out",   default="apresentacao-junho.html")
-    ap.add_argument("--x-min", default=None, help="default: start - 1 dia")
-    ap.add_argument("--x-max", default=None, help="default: end")
-    args = ap.parse_args()
-
-    START = f"{args.start}T00:00:00"
-    END   = f"{args.end}T00:00:00"
-    from datetime import timedelta
-    d_start = datetime.strptime(args.start, "%Y-%m-%d").date()
-    d_end   = datetime.strptime(args.end,   "%Y-%m-%d").date()
-    X_MIN = args.x_min or (d_start - timedelta(days=1)).isoformat()
-    X_MAX = args.x_max or d_end.isoformat()
-    TITLE = args.title
-    OUT   = args.out
-
-    por_gestor = _build_data()
-    if "Sem gestor" in por_gestor and not por_gestor["Sem gestor"]:
-        del por_gestor["Sem gestor"]
-
-    reat, total_uniq = _count_reativacoes()
-    evasao = f"{round(100 * (total_uniq - reat) / total_uniq)}%" if total_uniq else "—"
-
-    data_json = json.dumps(por_gestor, ensure_ascii=False)
-    cores_json = json.dumps(CORES, ensure_ascii=False)
-    html = (HTML
-        .replace("/*DATA_JSON*/", data_json)
-        .replace("/*CORES_JSON*/", cores_json)
-        .replace("/*TITLE*/", TITLE)
-        .replace("/*X_MIN*/", X_MIN)
-        .replace("/*X_MAX*/", X_MAX)
-        .replace("/*REATIV*/", str(reat))
-        .replace("/*EVASAO*/", evasao)
-    )
-
-    out = HERE / "docs" / OUT
-    out.write_text(html, encoding="utf-8")
-    print(f"✓ Gerado: {out}")
-    print(f"  Período: {args.start} → {args.end}")
-    print(f"  Gestores: {list(por_gestor.keys())}")
-    print(f"  Total pausas (dedup): {sum(len(v) for v in por_gestor.values())}")
-    print(f"  Reativações: {reat}/{total_uniq} · Evasão: {evasao}")
-
-
-if __name__ == "__main__":
-    main()
