@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pausas Julho/2026 — Apresentação por Gestor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 32px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 15px; margin-bottom: 28px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
+  .chip {
+    background: var(--panel); border: 1.5px solid var(--border); color: var(--text);
+    padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip.active { background: var(--gestor-color, #3b82f6); border-color: var(--gestor-color, #3b82f6); color: #fff; }
+  .chip .count { background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .chip.active .count { background: rgba(0,0,0,0.25); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; margin-bottom: 20px;
+  }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .kpi .lbl { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi .val { font-size: 32px; font-weight: 700; margin-top: 4px; }
+  .chart-wrap { position: relative; height: 480px; }
+  .list { margin-top: 18px; max-height: 320px; overflow-y: auto; }
+  .list table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .list th, .list td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  .list th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+  .list td.data { color: var(--muted); white-space: nowrap; }
+  .list td.reason { color: var(--muted); max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .footer { color: var(--muted); font-size: 12px; margin-top: 32px; text-align: center; }
+  .footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pausas em Julho/2026 — por Gestor</h1>
+  <div class="sub">Clique num gestor abaixo para ver a linha do tempo das pausas. Dados extraídos do canal #financeiro (Discord DBOUT).</div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="lbl" id="kpi-lbl-total">Unidades pausadas</div><div class="val" id="kpi-total">–</div></div>
+    <div class="kpi"><div class="lbl" id="kpi-lbl-2">Dias com pausa</div><div class="val" id="kpi-dias">–</div></div>
+    <div class="kpi"><div class="lbl">Reativações no período</div><div class="val">10</div></div>
+    <div class="kpi"><div class="lbl">Evasão</div><div class="val">77%</div></div>
+  </div>
+
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    <div class="list">
+      <table>
+        <thead><tr><th>Data</th><th>Unidade</th><th>Motivo</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">
+    Gerado automaticamente · Dashboard completo em <a href="index.html">/index.html</a>
+  </div>
+</div>
+
+<script>
+const DATA = {"Victor": [{"unit": "Be Happy Poços de Caldas", "key": "be happy pocos de caldas", "ts": "2026-07-01T12:43:01.742000+00:00", "reason": "Informou que durante a copa está sem comparecimento."}, {"unit": "Hospital Vitallys Santa Inês", "key": "hospital vitallys santa ines", "ts": "2026-07-03T14:13:53.725000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Implandom Brasilia Asa Norte", "key": "implandom brasilia asa norte", "ts": "2026-07-06T17:09:46.569000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Odonto Excellence Caxias do Sul", "key": "odonto excellence caxias do sul", "ts": "2026-07-07T11:37:50.579000+00:00", "reason": "Entrada de lead e lead distante"}, {"unit": "Sorrix Formiga", "key": "sorrix formiga", "ts": "2026-07-07T18:40:23.551000+00:00", "reason": "Informaram que estão sem dentistas nna clínica e por isso irão pausar"}, {"unit": "Goianira", "key": "goianira", "ts": "2026-07-09T12:47:45.339000+00:00", "reason": "Entrada de lead"}, {"unit": "OralDents Conselheiro Pena", "key": "oraldents conselheiro pena", "ts": "2026-07-13T19:43:27.918000+00:00", "reason": "Não continuarão"}, {"unit": "Odonto Excellence São João do Ivai", "key": "odonto excellence sao joao do ivai", "ts": "2026-07-15T13:49:05.533000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Nova Face Jaru", "key": "nova face jaru", "ts": "2026-07-17T13:37:13.229000+00:00", "reason": "Assim que encerrar o saldo estão sem CRC e querendo pausar por um tempo."}, {"unit": "Orthovip Volta Redonda", "key": "orthovip volta redonda", "ts": "2026-07-20T14:11:07.251000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Clínica Odontologica Sabatini Santo André SP", "key": "clinica odontologica sabatini santo andre sp", "ts": "2026-07-21T15:02:10.688000+00:00", "reason": "Informaram que não estão tendo comparecimentos e conversões e devido a isso e em relação ao financeiro, não irão continuar."}, {"unit": "MedicMais Aracaju", "key": "medicmais aracaju", "ts": "2026-07-22T13:34:31.112000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Vivare Penha", "key": "vivare penha", "ts": "2026-07-27T13:01:59.631000+00:00", "reason": "A clínica está entrando em férias coletivas, e vão retornar na próxima semana"}, {"unit": "OralDents Itaocara", "key": "oraldents itaocara", "ts": "2026-07-27T13:22:13.401000+00:00", "reason": "Pagamento em atraso"}], "Milena": [{"unit": "Orthopride São Caetano do Sul", "key": "orthopride sao caetano do sul", "ts": "2026-07-01T13:13:52.914000+00:00", "reason": "Não continuarão."}, {"unit": "Oralday Botelhos", "key": "oralday botelhos", "ts": "2026-07-06T14:44:25.083000+00:00", "reason": "Não continuarão"}, {"unit": "Sorocaba Vila Formosa", "key": "sorocaba vila formosa", "ts": "2026-07-22T17:02:19.863000+00:00", "reason": "Pagamento em atraso, e o saldo encerrou"}], "Igor": [{"unit": "Orthopride Belo Horizonte", "key": "orthopride belo horizonte", "ts": "2026-07-01T18:00:10.077000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Dr Sorriso", "key": "dr sorriso", "ts": "2026-07-06T20:52:39.223000+00:00", "reason": "Não continuarão"}, {"unit": "Januária", "key": "januaria", "ts": "2026-07-13T18:59:27.575000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Lapa SP", "key": "lapa sp", "ts": "2026-07-15T19:20:20.992000+00:00", "reason": "Assim que encerrar o saldo, informaram uma queda nos resultados nos últimos meses, e que irão testar durante uns 2 ou 3 meses outras formas de captação direto com a franqueadora."}, {"unit": "Prado", "key": "prado", "ts": "2026-07-16T15:00:30.417000+00:00", "reason": "Estão analisando uma proposta para continuar"}, {"unit": "OralDents Colatina", "key": "oraldents colatina", "ts": "2026-07-20T16:38:12.689000+00:00", "reason": "Assim que encerrar o saldo, informaram que pausarão por um tempo"}, {"unit": "Santa Maria DF", "key": "santa maria df", "ts": "2026-07-20T20:30:36.688000+00:00", "reason": "Pagamento em atraso"}, {"unit": "ODC Diadema", "key": "odc diadema", "ts": "2026-07-21T18:09:11.739000+00:00", "reason": "Não continuarão"}, {"unit": "Marilia", "key": "marilia", "ts": "2026-07-27T12:57:42.724000+00:00", "reason": "Pagamento em atraso e não sabemos se irão manter a parceria"}, {"unit": "Ricardo Marum Muriaé", "key": "ricardo marum muriae", "ts": "2026-07-28T17:26:55.756000+00:00", "reason": "Pagamento em atraso"}], "Mota": [{"unit": "Global Sorriso Soure", "key": "global sorriso soure", "ts": "2026-07-02T12:39:37.656000+00:00", "reason": "Informaram que vão retornar em agosto"}, {"unit": "Amagon Bocaiuva", "key": "amagon bocaiuva", "ts": "2026-07-07T20:20:55.093000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Previna Odonto Pedreira", "key": "previna odonto pedreira", "ts": "2026-07-08T15:29:00.367000+00:00", "reason": "Assim que o saldo encerrar, não continuarão"}, {"unit": "Unident Sinop", "key": "unident sinop", "ts": "2026-07-10T13:41:41.601000+00:00", "reason": "Assim que encerrar o saldo, não continuarão"}, {"unit": "BH Amazonas", "key": "bh amazonas", "ts": "2026-07-13T17:18:44.161000+00:00", "reason": "Pagamento em atraso"}, {"unit": "IEB João Monlevade", "key": "ieb joao monlevade", "ts": "2026-07-20T16:41:00.394000+00:00", "reason": "Assim que encerrar o saldo, informaram que estão ajustando coisas internas na clínica e que retornam em breve"}], "Thiago Braga": [{"unit": "Uberlândia Avenida Floriano Peixoto", "key": "uberlandia avenida floriano peixoto", "ts": "2026-07-06T12:39:20.300000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Odonto Excellence Corumba", "key": "odonto excellence corumba", "ts": "2026-07-06T18:06:50.426000+00:00", "reason": "Pagamento em atraso"}, {"unit": "Rio de Janeiro - Madureira", "key": "rio de janeiro madureira", "ts": "2026-07-06T18:44:06.269000+00:00", "reason": "Não continuarão"}, {"unit": "+Odonto Taguatinga", "key": "odonto taguatinga", "ts": "2026-07-07T14:37:33.959000+00:00", "reason": "Pagamento em atraso"}, {"unit": "OralDents Nova Friburgo", "key": "oraldents nova friburgo", "ts": "2026-07-17T14:27:41.560000+00:00", "reason": "Pagamento em atraso"}, {"unit": "RedeOrto Chapadinha", "key": "redeorto chapadinha", "ts": "2026-07-17T21:04:13.345000+00:00", "reason": ""}, {"unit": "Orthodontic Arapongas", "key": "orthodontic arapongas", "ts": "2026-07-21T14:33:59.104000+00:00", "reason": "Pagamento em atraso"}, {"unit": "OralDents Abre Campo", "key": "oraldents abre campo", "ts": "2026-07-22T17:37:33.972000+00:00", "reason": "Não continuarão"}, {"unit": "Sorocaba Rua Eulalia Silva", "key": "sorocaba rua eulalia silva", "ts": "2026-07-27T12:56:57.902000+00:00", "reason": "Pagamento em atraso e não sabemos se irão manter a parceria"}], "Bueno": [{"unit": "Orthodontic Planaltina GO", "key": "orthodontic planaltina go", "ts": "2026-07-21T13:08:47.859000+00:00", "reason": "Pagamento em atraso"}]};
+const CORES = {"Victor": "#ef4444", "Thiago Braga": "#f59e0b", "Milena": "#3b82f6", "Mota": "#10b981", "Igor": "#a855f7", "Bueno": "#14b8a6"};
+
+const chips = document.getElementById("chips");
+const gestores = Object.keys(DATA).sort((a,b) => DATA[b].length - DATA[a].length);
+const TOTAL_ALL = gestores.reduce((s,g) => s + DATA[g].length, 0);
+
+let atual = "__todos__";
+
+// Chip "Todos" (home)
+const chipTodos = document.createElement("div");
+chipTodos.className = "chip";
+chipTodos.style.setProperty("--gestor-color", "#e6edf3");
+chipTodos.innerHTML = `Todos <span class="count">${TOTAL_ALL}</span>`;
+chipTodos.onclick = () => { atual = "__todos__"; render(); };
+chips.appendChild(chipTodos);
+
+gestores.forEach(g => {
+  const el = document.createElement("div");
+  el.className = "chip";
+  el.style.setProperty("--gestor-color", CORES[g] || "#666");
+  el.innerHTML = `${g} <span class="count">${DATA[g].length}</span>`;
+  el.onclick = () => { atual = g; render(); };
+  chips.appendChild(el);
+});
+
+const ctx = document.getElementById("chart").getContext("2d");
+let chart;
+
+function render() {
+  // chip ativo
+  const chipsArr = Array.from(chips.children);
+  chipsArr[0].classList.toggle("active", atual === "__todos__");
+  gestores.forEach((g, i) => chipsArr[i+1].classList.toggle("active", g === atual));
+
+  if (chart) { chart.destroy(); }
+
+  if (atual === "__todos__") {
+    renderTodos();
+  } else {
+    renderGestor(atual);
+  }
+}
+
+function renderTodos() {
+  // Swimlane: uma linha por gestor, todas as pausas do mês
+  const ordem = gestores.slice();  // já ordenado por volume desc
+  const datasets = ordem.map((g, i) => ({
+    label: g,
+    data: DATA[g].map(p => ({
+      x: p.ts.slice(0, 10), y: ordem.length - 1 - i,
+      unit: p.unit, reason: p.reason, ts: p.ts, gestor: g,
+    })),
+    backgroundColor: CORES[g] || "#666",
+    borderColor: "#fff",
+    borderWidth: 1.2,
+    pointRadius: 8,
+    pointHoverRadius: 11,
+  }));
+
+  chart = new Chart(ctx, {
+    type: "scatter",
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "day", displayFormats: { day: "dd/MM" }, tooltipFormat: "dd/MM/yyyy" },
+          min: "2026-06-30", max: "2026-08-01",
+          grid: { color: "#30363d40" }, ticks: { color: "#8b949e" },
+        },
+        y: {
+          min: -0.5, max: ordem.length - 0.5,
+          grid: { color: "#30363d40" },
+          ticks: {
+            stepSize: 1, color: "#e6edf3", font: { weight: "bold", size: 13 },
+            callback: (v) => ordem[ordem.length - 1 - v] || "",
+          },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
+          titleColor: "#e6edf3", bodyColor: "#e6edf3", padding: 12,
+          callbacks: {
+            title: (items) => items[0].raw.unit,
+            label: (item) => `${item.raw.gestor} · ${new Date(item.raw.ts).toLocaleDateString("pt-BR")}`,
+            afterLabel: (item) => item.raw.reason ? "\n" + item.raw.reason : "",
+          }
+        }
+      }
+    }
+  });
+
+  // KPIs
+  document.getElementById("kpi-lbl-total").textContent = "Total pausadas";
+  document.getElementById("kpi-lbl-2").textContent = "Gestores atingidos";
+  document.getElementById("kpi-total").textContent = TOTAL_ALL;
+  document.getElementById("kpi-dias").textContent = gestores.length;
+
+  // Lista: todas as pausas, ordenadas por data
+  const todas = [];
+  gestores.forEach(g => DATA[g].forEach(p => todas.push({...p, gestor: g})));
+  todas.sort((a,b) => a.ts.localeCompare(b.ts));
+
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  // header dinâmico
+  document.querySelector("thead tr").innerHTML =
+    "<th>Data</th><th>Gestor</th><th>Unidade</th><th>Motivo</th>";
+  todas.forEach(p => {
+    const tr = document.createElement("tr");
+    const d = new Date(p.ts).toLocaleDateString("pt-BR");
+    const cor = CORES[p.gestor] || "#666";
+    tr.innerHTML = `<td class="data">${d}</td>
+      <td><span style="color:${cor};font-weight:600">${p.gestor}</span></td>
+      <td><b>${p.unit}</b></td>
+      <td class="reason">${p.reason || "—"}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderGestor(g) {
+  const pausas = DATA[g] || [];
+  const cor = CORES[g] || "#3b82f6";
+
+  const contDia = {};
+  const pontos = pausas.map(p => {
+    const dia = p.ts.slice(0, 10);
+    contDia[dia] = (contDia[dia] || 0) + 1;
+    return { x: dia, y: contDia[dia], unit: p.unit, reason: p.reason, ts: p.ts };
+  });
+
+  chart = new Chart(ctx, {
+    type: "scatter",
+    data: {
+      datasets: [{
+        label: g, data: pontos,
+        backgroundColor: cor, borderColor: "#fff", borderWidth: 1.5,
+        pointRadius: 9, pointHoverRadius: 12,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "day", displayFormats: { day: "dd/MM" }, tooltipFormat: "dd/MM/yyyy" },
+          min: "2026-06-30", max: "2026-08-01",
+          grid: { color: "#30363d40" }, ticks: { color: "#8b949e" },
+        },
+        y: {
+          beginAtZero: true, min: 0,
+          max: Math.max(3, Math.max(...pontos.map(p => p.y), 0) + 1),
+          grid: { display: false }, ticks: { display: false },
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "#161b22", borderColor: cor, borderWidth: 1,
+          titleColor: "#e6edf3", bodyColor: "#e6edf3", padding: 12,
+          callbacks: {
+            title: (items) => items[0].raw.unit,
+            label: (item) => new Date(item.raw.ts).toLocaleDateString("pt-BR"),
+            afterLabel: (item) => item.raw.reason ? "\n" + item.raw.reason : "",
+          }
+        }
+      }
+    }
+  });
+
+  document.getElementById("kpi-lbl-total").textContent = "Unidades pausadas";
+  document.getElementById("kpi-lbl-2").textContent = "Dias com pausa";
+  document.getElementById("kpi-total").textContent = pausas.length;
+  document.getElementById("kpi-dias").textContent = Object.keys(contDia).length;
+
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  document.querySelector("thead tr").innerHTML =
+    "<th>Data</th><th>Unidade</th><th>Motivo</th>";
+  pausas.slice().sort((a,b) => a.ts.localeCompare(b.ts)).forEach(p => {
+    const tr = document.createElement("tr");
+    const d = new Date(p.ts).toLocaleDateString("pt-BR");
+    tr.innerHTML = `<td class="data">${d}</td><td><b>${p.unit}</b></td><td class="reason">${p.reason || "—"}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+render();
+</script>
+</body>
+</html>
